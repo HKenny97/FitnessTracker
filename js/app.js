@@ -84,7 +84,8 @@ route("/settings", wrap(async (root) => settings.render(root)));
 onRender((handler, params) => handler(params));
 
 document.addEventListener("click", (e) => {
-  if (e.target.id === "sign-in-btn") {
+  const btn = e.target.closest("#sign-in-btn, #sign-in-btn-2");
+  if (btn) {
     e.preventDefault();
     auth.signIn();
   }

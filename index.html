@@ -32,16 +32,108 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <template id="tpl-signed-out">
-    <section class="hero">
-      <h1>Train hard. Track smart.</h1>
-      <p>A hypertrophy tracker that auto-progresses volume from MEV to MRV and saves every set to your own Google Sheet.</p>
-      <button class="btn primary" id="sign-in-btn">Sign in with Google</button>
-      <p class="muted small">Your data lives in a Google Sheet you own. We never see it.</p>
-      <div class="feature-grid">
-        <div><h3>Mesocycle planner</h3><p>4–6 week blocks with auto set progression and a built-in deload.</p></div>
-        <div><h3>RIR-based logging</h3><p>Log weight, reps and reps-in-reserve. Sees last workout to prescribe overload.</p></div>
-        <div><h3>Volume landmarks</h3><p>RP defaults for MV / MEV / MAV / MRV per muscle group, fully editable.</p></div>
+    <section class="landing">
+
+      <!-- Hero -->
+      <div class="landing-hero">
+        <div class="landing-badge">RP-based hypertrophy</div>
+        <h1 class="landing-title">Train hard.<br>Track&nbsp;smart.</h1>
+        <p class="landing-sub">Auto-progress volume from MEV to MRV, log every set with RIR, and own your data in a private Google Sheet.</p>
+        <button class="landing-cta" id="sign-in-btn">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23Z" fill="#34A853"/><path d="M5.84 14.09A6.72 6.72 0 0 1 5.5 12c0-.72.12-1.42.35-2.09V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.93l3.66-2.84Z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z" fill="#EA4335"/></svg>
+          Sign in with Google
+        </button>
+        <p class="landing-privacy">100% private &mdash; data lives in your own Google Sheet. We never see it.</p>
       </div>
+
+      <!-- Stats ribbon -->
+      <div class="landing-ribbon">
+        <div><span>284</span>exercises</div>
+        <div><span>16</span>muscle groups</div>
+        <div><span>9</span>equipment types</div>
+        <div><span>100%</span>free &amp; private</div>
+      </div>
+
+      <!-- Features -->
+      <div class="landing-section">
+        <h2 class="landing-section-title">Everything you need for hypertrophy</h2>
+        <div class="landing-features">
+          <div class="landing-feature">
+            <div class="lf-icon">&#x1F4C8;</div>
+            <h3>Mesocycle planner</h3>
+            <p>4&ndash;12 week blocks with auto set/RIR progression and a built-in deload week. Start from templates or build your own.</p>
+          </div>
+          <div class="landing-feature">
+            <div class="lf-icon">&#x1F3CB;</div>
+            <h3>RIR-based logging</h3>
+            <p>Log weight, reps, and reps-in-reserve. Sees last session to prescribe progressive overload automatically.</p>
+          </div>
+          <div class="landing-feature">
+            <div class="lf-icon">&#x1F4CA;</div>
+            <h3>Volume landmarks</h3>
+            <p>RP defaults for MV / MEV / MAV / MRV per muscle group. Fully editable as you learn your own recovery capacity.</p>
+          </div>
+          <div class="landing-feature">
+            <div class="lf-icon">&#x1F3C6;</div>
+            <h3>PR tracking</h3>
+            <p>Automatic personal record detection with badges on your history. See weight PRs and estimated 1RM milestones.</p>
+          </div>
+          <div class="landing-feature">
+            <div class="lf-icon">&#x1F4C9;</div>
+            <h3>Progress charts</h3>
+            <p>Weight progression and e1RM charts per exercise. Body weight trends and workout frequency over time.</p>
+          </div>
+          <div class="landing-feature">
+            <div class="lf-icon">&#x26A1;</div>
+            <h3>Quick custom workouts</h3>
+            <p>No mesocycle? No problem. Pick any exercise from 284 built-in options and start logging sets immediately.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- How it works -->
+      <div class="landing-section">
+        <h2 class="landing-section-title">How it works</h2>
+        <div class="landing-steps">
+          <div class="landing-step">
+            <div class="ls-num">1</div>
+            <h3>Sign in with Google</h3>
+            <p>Authorize read/write access to your own Google Sheets. No account to create &mdash; no data stored on our servers.</p>
+          </div>
+          <div class="landing-step">
+            <div class="ls-num">2</div>
+            <h3>Plan a mesocycle</h3>
+            <p>Pick a template (PPL, Upper/Lower, Full Body) or build custom training days. The app auto-calculates weekly volume.</p>
+          </div>
+          <div class="landing-step">
+            <div class="ls-num">3</div>
+            <h3>Train &amp; track</h3>
+            <p>Log sets during your workout. See last session's numbers, suggested weights, and real-time volume progress bars.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Equipment -->
+      <div class="landing-section">
+        <h2 class="landing-section-title">Built for real gyms</h2>
+        <p class="landing-sub" style="text-align:center; margin-bottom:1.5rem;">284 exercises across every equipment type &mdash; from barbells to Hammer Strength machines.</p>
+        <div class="landing-equip">
+          <span>Barbell</span><span>Dumbbell</span><span>Cable</span>
+          <span>Hammer Strength</span><span>Machine</span><span>Smith Machine</span>
+          <span>Bodyweight</span><span>Kettlebell</span><span>Band</span>
+        </div>
+      </div>
+
+      <!-- Final CTA -->
+      <div class="landing-final">
+        <h2>Ready to train?</h2>
+        <p class="landing-sub">Free, private, no sign-up &mdash; just your Google account.</p>
+        <button class="landing-cta" id="sign-in-btn-2">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23Z" fill="#34A853"/><path d="M5.84 14.09A6.72 6.72 0 0 1 5.5 12c0-.72.12-1.42.35-2.09V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.93l3.66-2.84Z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z" fill="#EA4335"/></svg>
+          Get started free
+        </button>
+      </div>
+
     </section>
   </template>
 

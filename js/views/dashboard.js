@@ -10,6 +10,12 @@ function stat(value, label) {
   );
 }
 
+function formatVolume(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return n.toLocaleString();
+}
+
 export async function render(container, { signedIn }) {
   if (!signedIn) {
     const tpl = document.getElementById("tpl-signed-out");
@@ -117,20 +123,44 @@ export async function render(container, { signedIn }) {
     bwForm.style.display = bwForm.style.display === "none" ? "" : "none";
   };
 
-  // --- Active meso summary ---
+  // --- Active meso summary (Enhancement 1: with sparklines) ---
   if (activeMeso) {
     const start = new Date(activeMeso.startDate);
     const days = Math.floor((Date.now() - start.getTime()) / 86400000);
     const week = Math.min(+activeMeso.weeks, Math.max(1, Math.floor(days / 7) + 1));
     const isDeload = week === +activeMeso.weeks;
+    const showSparklines = week >= 2;
 
     const weekVol = await data.weeklyVolume(activeMeso.id, week);
     const plan = await data.getWeekPlan(activeMeso.id);
     const planThisWeek = plan.filter((p) => p.week === week);
+
+    // Pre-compute sparkline data per muscle group (sets per week across meso)
+    const sparkData = {};
+    if (showSparklines) {
+      const mesoSets = allSets.filter((s) => s.mesoId === activeMeso.id);
+      for (const p of planThisWeek) {
+        const pts = [];
+        for (let w = 1; w <= week; w++) {
+          const weekStart = new Date(start);
+          weekStart.setDate(weekStart.getDate() + (w - 1) * 7);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          const wStart = weekStart.toISOString().slice(0, 10);
+          const wEnd = weekEnd.toISOString().slice(0, 10);
+          const count = mesoSets.filter(
+            (s) => s.muscleGroup === p.muscleGroup && s.date >= wStart && s.date <= wEnd,
+          ).length;
+          pts.push({ x: w, y: count });
+        }
+        sparkData[p.muscleGroup] = pts;
+      }
+    }
+
     const volumeRows = planThisWeek.map((p) => {
       const done = weekVol[p.muscleGroup] || 0;
       const pct = Math.min(100, Math.round((done / Math.max(1, p.targetSets)) * 100));
-      return el("tr", {},
+      const cells = [
         el("td", { class: "muscle" }, p.muscleGroup),
         el("td", {}, `${done} / ${p.targetSets}`),
         el("td", {}, `${p.targetRIR} RIR`),
@@ -154,7 +184,13 @@ export async function render(container, { signedIn }) {
             }),
           ),
         ),
-      );
+      ];
+      if (showSparklines) {
+        const cvs = el("canvas", { style: { width: "80px", height: "24px" } });
+        cells.push(el("td", { class: "sparkline-cell" }, cvs));
+        requestAnimationFrame(() => sparkline(cvs, sparkData[p.muscleGroup] || [], "#ffb547"));
+      }
+      return el("tr", {}, ...cells);
     });
 
     container.append(
@@ -177,6 +213,7 @@ export async function render(container, { signedIn }) {
               el("th", {}, "Sets done"),
               el("th", {}, "Target RIR"),
               el("th", {}, "Progress"),
+              ...(showSparklines ? [el("th", {}, "Trend")] : []),
             ),
           ),
           el("tbody", {}, ...volumeRows),
@@ -191,6 +228,86 @@ export async function render(container, { signedIn }) {
         ".",
       ),
     );
+  }
+
+  // --- Enhancement 2: Recent Activity (last 5 workouts) ---
+  if (allSets.length) {
+    const setsByDate = {};
+    for (const s of allSets) {
+      if (!setsByDate[s.date]) setsByDate[s.date] = [];
+      setsByDate[s.date].push(s);
+    }
+    const recentDates = Object.keys(setsByDate).sort((a, b) => b.localeCompare(a)).slice(0, 5);
+    if (recentDates.length) {
+      const section = el("section", { class: "card recent-activity" },
+        el("h3", {}, "Recent Activity"),
+      );
+      for (const date of recentDates) {
+        const sets = setsByDate[date];
+        const setCount = sets.length;
+        // Muscle groups sorted by count
+        const mgCount = {};
+        for (const s of sets) {
+          const mg = s.muscleGroup || "Other";
+          mgCount[mg] = (mgCount[mg] || 0) + 1;
+        }
+        const muscleGroups = Object.entries(mgCount).sort((a, b) => b[1] - a[1]).map(([mg]) => mg);
+        // Total volume
+        const totalVol = sets.reduce((sum, s) => sum + (+s.weight || 0) * (+s.reps || 0), 0);
+
+        const pills = el("div", { class: "muscle-pills" });
+        for (const mg of muscleGroups) {
+          pills.append(el("span", { class: "pill" }, mg));
+        }
+
+        section.append(
+          el("div", { class: "activity-card" },
+            el("div", { class: "activity-header" },
+              el("span", { class: "activity-date" }, fmtDate(date)),
+              el("span", { class: "muted small" }, `${setCount} sets`),
+              totalVol > 0
+                ? el("span", { class: "muted small" }, `${totalVol.toLocaleString()} lbs`)
+                : null,
+            ),
+            pills,
+          ),
+        );
+      }
+      container.append(section);
+    }
+  }
+
+  // --- Enhancement 3: Cardio Summary ---
+  if (cardioEntries.length) {
+    const monthPrefix = today.slice(0, 7);
+    const thisMonthCardio = cardioEntries.filter((c) => c.date && c.date.startsWith(monthPrefix));
+    const totalMinutes = thisMonthCardio.reduce((sum, c) => sum + (+c.duration || 0), 0);
+    const lastThree = cardioEntries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 3);
+
+    const section = el("section", { class: "card" },
+      el("h3", {}, "Cardio"),
+      el("div", { class: "cardio-summary-stats" },
+        stat(String(thisMonthCardio.length), "Sessions this month"),
+        stat(totalMinutes > 0 ? `${totalMinutes} min` : "—", "Minutes this month"),
+      ),
+    );
+
+    if (lastThree.length) {
+      section.append(el("h4", { class: "small muted", style: { marginTop: "0.5rem", marginBottom: "0.25rem" } }, "Recent"));
+      for (const entry of lastThree) {
+        section.append(
+          el("div", { class: "cardio-entry" },
+            el("div", { class: "card-row" },
+              el("span", {}, entry.type || "Cardio"),
+              el("span", { class: "muted small" },
+                `${entry.duration || "?"} min · ${entry.date ? fmtDate(entry.date) : "—"}`,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+    container.append(section);
   }
 
   // --- Body weight trend chart ---
@@ -229,6 +346,52 @@ export async function render(container, { signedIn }) {
       );
     }
     container.append(prCard);
+  }
+
+  // --- Enhancement 4: All-Time Stats ---
+  if (allSets.length) {
+    const uniqueDates = new Set(allSets.map((s) => s.date));
+    const totalVolume = allSets.reduce((sum, s) => sum + (+s.weight || 0) * (+s.reps || 0), 0);
+    const uniqueExercises = new Set(allSets.map((s) => s.exercise));
+
+    container.append(
+      el("section", { class: "card" },
+        el("h3", {}, "All-Time Stats"),
+        el("div", { class: "summary-stats", style: { marginBottom: "0" } },
+          stat(String(uniqueDates.size), "Total workouts"),
+          stat(formatVolume(totalVolume) + " lbs", "Total volume"),
+          stat(String(uniqueExercises.size), "Unique exercises"),
+        ),
+      ),
+    );
+  }
+
+  // --- Enhancement 5: Muscle Group Distribution ---
+  if (allSets.length) {
+    const mgCounts = {};
+    for (const s of allSets) {
+      const mg = s.muscleGroup || "Other";
+      mgCounts[mg] = (mgCounts[mg] || 0) + 1;
+    }
+    const sorted = Object.entries(mgCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const maxCount = sorted[0]?.[1] || 1;
+
+    const section = el("section", { class: "card" },
+      el("h3", {}, "Muscle Group Distribution"),
+    );
+    for (const [mg, count] of sorted) {
+      const pct = Math.round((count / maxCount) * 100);
+      section.append(
+        el("div", { class: "muscle-dist-row" },
+          el("span", { class: "muscle-dist-label" }, mg),
+          el("div", { class: "muscle-dist-bar" },
+            el("div", { class: "muscle-dist-fill", style: { width: pct + "%" } }),
+          ),
+          el("span", { class: "muted small", style: { textAlign: "right" } }, String(count)),
+        ),
+      );
+    }
+    container.append(section);
   }
 
   // --- Workout frequency chart (last 8 weeks) ---
