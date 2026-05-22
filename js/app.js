@@ -7,6 +7,7 @@ import * as workout from "./views/workout.js";
 import * as cardio from "./views/cardio.js";
 import * as history from "./views/history.js";
 import * as settings from "./views/settings.js";
+import * as sheets from "./sheets.js";
 import { el, clear, toast } from "./ui.js";
 
 const view = document.getElementById("view");
@@ -93,6 +94,14 @@ document.addEventListener("click", (e) => {
   await auth.init();
   if (auth.didSilentRestoreFail()) {
     toast("Session expired — please sign in again", "warn");
+  }
+  const initState = auth.getState();
+  if (initState.signedIn && sheets.getSpreadsheetId()) {
+    try {
+      await sheets.ensureTabs(sheets.getSpreadsheetId());
+    } catch (e) {
+      console.error("Failed to ensure tabs:", e);
+    }
   }
   auth.onAuthChange((state) => {
     renderAuth(state);

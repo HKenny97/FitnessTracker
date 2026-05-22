@@ -182,20 +182,25 @@ export async function readAll(key) {
   const id = getSpreadsheetId();
   if (!id) return [];
   const t = tab(key);
-  const r = await api().spreadsheets.values.get({
-    spreadsheetId: id,
-    range: `${t.title}`,
-  });
-  const rows = r.result.values || [];
-  if (!rows.length) return [];
-  const [headers, ...body] = rows;
-  return body
-    .filter((row) => row.length > 0)
-    .map((row) => {
-      const obj = {};
-      headers.forEach((h, i) => (obj[h] = row[i] ?? ""));
-      return obj;
+  try {
+    const r = await api().spreadsheets.values.get({
+      spreadsheetId: id,
+      range: `${t.title}`,
     });
+    const rows = r.result.values || [];
+    if (!rows.length) return [];
+    const [headers, ...body] = rows;
+    return body
+      .filter((row) => row.length > 0)
+      .map((row) => {
+        const obj = {};
+        headers.forEach((h, i) => (obj[h] = row[i] ?? ""));
+        return obj;
+      });
+  } catch (e) {
+    if (e?.result?.error?.code === 400) return [];
+    throw e;
+  }
 }
 
 function rowFromObject(key, obj) {
