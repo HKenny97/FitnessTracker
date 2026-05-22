@@ -1,8 +1,5 @@
 import { config } from "./config.js";
 
-// Wraps Google Identity Services token-flow auth + the gapi client library.
-// The user is "signed in" while we have a non-expired access token.
-
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
@@ -14,6 +11,36 @@ const subscribers = new Set();
 
 function notify() {
   for (const cb of subscribers) cb(getState());
+}
+
+function cacheToken() {
+  localStorage.setItem("rp.token", JSON.stringify({
+    accessToken,
+    tokenExpiresAt,
+    userEmail,
+  }));
+}
+
+function restoreToken() {
+  try {
+    const raw = localStorage.getItem("rp.token");
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached.accessToken || Date.now() >= cached.tokenExpiresAt) {
+      localStorage.removeItem("rp.token");
+      return false;
+    }
+    accessToken = cached.accessToken;
+    tokenExpiresAt = cached.tokenExpiresAt;
+    userEmail = cached.userEmail || null;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearTokenCache() {
+  localStorage.removeItem("rp.token");
 }
 
 export function onAuthChange(cb) {
@@ -36,7 +63,6 @@ export function getAccessToken() {
   return accessToken;
 }
 
-// Wait until both the gapi and GIS libraries are loaded.
 async function waitForLibs() {
   await new Promise((resolve) => {
     const tick = () => {
@@ -66,9 +92,11 @@ export async function init() {
     notify();
     return;
   }
+
   tokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: config.googleClientId,
     scope: config.scopes,
+    hint: userEmail || "",
     callback: (resp) => {
       if (resp.error) {
         console.error("Token error", resp);
@@ -78,9 +106,37 @@ export async function init() {
       accessToken = resp.access_token;
       tokenExpiresAt = Date.now() + (resp.expires_in - 60) * 1000;
       window.gapi.client.setToken({ access_token: accessToken });
-      fetchUserInfo().finally(notify);
+      localStorage.setItem("rp.consentGiven", "1");
+      fetchUserInfo().then(() => {
+        cacheToken();
+        notify();
+      });
     },
   });
+
+  // Restore cached token — if valid, sign in silently with no popup.
+  if (restoreToken()) {
+    window.gapi.client.setToken({ access_token: accessToken });
+    // Verify the token is still accepted by Google.
+    try {
+      const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (r.ok) {
+        const info = await r.json();
+        userEmail = info.email || userEmail;
+        cacheToken();
+        notify();
+        return;
+      }
+    } catch { /* fall through to normal flow */ }
+    // Token was rejected — clear and let user sign in again.
+    accessToken = null;
+    tokenExpiresAt = 0;
+    clearTokenCache();
+    window.gapi.client.setToken(null);
+  }
+
   notify();
 }
 
@@ -93,8 +149,8 @@ async function fetchUserInfo() {
       const data = await r.json();
       userEmail = data.email;
     }
-  } catch (e) {
-    // best-effort; ignore
+  } catch {
+    // best-effort
   }
 }
 
@@ -105,7 +161,12 @@ export function signIn() {
     );
     return;
   }
-  tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
+  // After first consent, skip the permissions screen — just pick account.
+  const hasConsented = localStorage.getItem("rp.consentGiven");
+  tokenClient.requestAccessToken({
+    prompt: hasConsented ? "" : "consent",
+    login_hint: userEmail || "",
+  });
 }
 
 export function signOut() {
@@ -116,5 +177,6 @@ export function signOut() {
   tokenExpiresAt = 0;
   userEmail = null;
   window.gapi?.client?.setToken(null);
+  clearTokenCache();
   notify();
 }

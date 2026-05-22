@@ -5,6 +5,7 @@ import * as dashboard from "./views/dashboard.js";
 import * as meso from "./views/meso.js";
 import * as workout from "./views/workout.js";
 import * as custom from "./views/custom.js";
+import * as history from "./views/history.js";
 import * as settings from "./views/settings.js";
 import { el, clear, toast } from "./ui.js";
 
@@ -17,6 +18,7 @@ function setActiveTab() {
     hash.startsWith("#/meso") ? "meso" :
     hash.startsWith("#/workout") ? "workout" :
     hash.startsWith("#/custom") ? "custom" :
+    hash.startsWith("#/history") ? "history" :
     hash.startsWith("#/settings") ? "settings" : "dashboard";
   for (const a of document.querySelectorAll(".tabs a")) {
     a.classList.toggle("active", a.dataset.route === tab);
@@ -77,6 +79,7 @@ route("/meso/new", wrap(async (root) => meso.renderNew(root)));
 route("/meso/:id", wrap(async (root, p) => meso.renderDetail(root, p.id)));
 route("/workout", wrap(async (root) => workout.render(root)));
 route("/custom", wrap(async (root) => custom.render(root)));
+route("/history", wrap(async (root) => history.render(root)));
 route("/settings", wrap(async (root) => settings.render(root)));
 
 onRender((handler, params) => handler(params));
