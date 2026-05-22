@@ -1,6 +1,6 @@
-import { el, isoToday, run, fmtDate, toast } from "../ui.js";
+import { el, isoToday, run, fmtDate, toast, withLoading } from "../ui.js";
 import * as data from "../data.js";
-import { EXERCISE_LIBRARY, MUSCLE_GROUPS, PROGRAM_TEMPLATES, progressSets, progressRIR } from "../rp.js";
+import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
 
 export async function renderList(container) {
@@ -39,7 +39,10 @@ const blankDay = () => ({
 });
 
 export async function renderNew(container) {
-  const landmarks = await data.getLandmarks();
+  const [landmarks, exerciseLib] = await Promise.all([
+    data.getLandmarks(),
+    data.getFullExerciseLibrary(),
+  ]);
 
   const state = {
     name: "Mesocycle " + new Date().toLocaleDateString(undefined, { month: "short", year: "numeric" }),
@@ -124,7 +127,7 @@ export async function renderNew(container) {
             el("select", {
               onchange: (e) => { state.weeks = +e.target.value; rerender(); },
             },
-              ...[4, 5, 6, 7].map((n) =>
+              ...[4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) =>
                 el("option", { value: n, selected: state.weeks === n ? "" : null }, `${n} weeks`)),
             ),
           ),
@@ -151,10 +154,12 @@ export async function renderNew(container) {
 
     wrap.append(buildPreview());
 
+    const createBtn = el("button", { class: "btn primary" }, "Create mesocycle");
+    createBtn.onclick = withLoading(createBtn, save);
     wrap.append(
       el("div", { class: "row between", style: { marginTop: "1.5rem" } },
         el("a", { class: "btn ghost", href: "#/meso" }, "Cancel"),
-        el("button", { class: "btn primary", onclick: save }, "Create mesocycle"),
+        createBtn,
       ),
     );
 
@@ -186,7 +191,7 @@ export async function renderNew(container) {
               type: "text", value: ex.exercise, list: "exercise-list",
               oninput: (e) => {
                 ex.exercise = e.target.value;
-                const match = EXERCISE_LIBRARY.find(
+                const match = exerciseLib.find(
                   (lib) => lib.name.toLowerCase() === e.target.value.toLowerCase(),
                 );
                 if (match && !ex.muscleGroup) ex.muscleGroup = match.group;
@@ -294,13 +299,12 @@ export async function renderNew(container) {
 
   rerender();
 
-  // Datalist for exercise autocomplete.
-  if (!document.getElementById("exercise-list")) {
-    const dl = el("datalist", { id: "exercise-list" },
-      ...EXERCISE_LIBRARY.map((x) => el("option", { value: x.name })),
-    );
-    document.body.append(dl);
-  }
+  const existingDl = document.getElementById("exercise-list");
+  if (existingDl) existingDl.remove();
+  const dl = el("datalist", { id: "exercise-list" },
+    ...exerciseLib.map((x) => el("option", { value: x.name })),
+  );
+  document.body.append(dl);
 }
 
 export async function renderDetail(container, id) {
@@ -315,6 +319,31 @@ export async function renderDetail(container, id) {
     data.getLandmarks(),
   ]);
 
+  const actionBtns = [];
+  if (meso.status !== "active") {
+    const btn = el("button", { class: "btn" }, "Set active");
+    btn.onclick = withLoading(btn, async () => {
+      await run(data.setMesocycleStatus(id, "active"), { ok: "Set active" });
+      navigate("#/");
+    });
+    actionBtns.push(btn);
+  }
+  if (meso.status !== "complete") {
+    const btn = el("button", { class: "btn" }, "Mark complete");
+    btn.onclick = withLoading(btn, async () => {
+      await run(data.setMesocycleStatus(id, "complete"), { ok: "Marked complete" });
+      navigate("#/meso");
+    });
+    actionBtns.push(btn);
+  }
+  const deleteBtn = el("button", { class: "btn danger ghost" }, "Delete");
+  deleteBtn.onclick = withLoading(deleteBtn, async () => {
+    if (!confirm("Delete this mesocycle and all its data? This cannot be undone.")) return;
+    await run(data.deleteMesocycle(id), { ok: "Mesocycle deleted" });
+    navigate("#/meso");
+  });
+  actionBtns.push(deleteBtn);
+
   container.append(
     el("div", { class: "section-title" },
       el("div", {},
@@ -323,22 +352,7 @@ export async function renderDetail(container, id) {
           `${meso.weeks} weeks · ${fmtDate(meso.startDate)} · ${meso.status}`,
         ),
       ),
-      el("div", { class: "row" },
-        meso.status !== "active" && el("button", {
-          class: "btn",
-          onclick: async () => {
-            await run(data.setMesocycleStatus(id, "active"), { ok: "Set active" });
-            navigate("#/");
-          },
-        }, "Set active"),
-        meso.status !== "complete" && el("button", {
-          class: "btn",
-          onclick: async () => {
-            await run(data.setMesocycleStatus(id, "complete"), { ok: "Marked complete" });
-            navigate("#/meso");
-          },
-        }, "Mark complete"),
-      ),
+      el("div", { class: "row" }, ...actionBtns),
     ),
   );
 

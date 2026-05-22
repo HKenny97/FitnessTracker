@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 
+let silentRestoreFailed = false;
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
@@ -130,11 +131,11 @@ export async function init() {
         return;
       }
     } catch { /* fall through to normal flow */ }
-    // Token was rejected — clear and let user sign in again.
     accessToken = null;
     tokenExpiresAt = 0;
     clearTokenCache();
     window.gapi.client.setToken(null);
+    silentRestoreFailed = true;
   }
 
   notify();
@@ -152,6 +153,12 @@ async function fetchUserInfo() {
   } catch {
     // best-effort
   }
+}
+
+export function didSilentRestoreFail() {
+  const v = silentRestoreFailed;
+  silentRestoreFailed = false;
+  return v;
 }
 
 export function signIn() {

@@ -406,6 +406,28 @@ input[type="number"] {
   word-break: break-word;
 }
 
+/* Cardio */
+.cardio-pill { background: var(--accent); color: white; }
+.cardio-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.difficulty-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+  max-width: 120px;
+}
+.difficulty-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
 @media (max-width: 540px) {
   .topbar { grid-template-columns: 1fr auto; }
   .topbar .tabs { grid-column: 1 / -1; order: 3; padding-top: 0.4rem; }

@@ -1,20 +1,58 @@
-import { el, isoToday, run, toast } from "../ui.js";
+import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm } from "../ui.js";
 import * as data from "../data.js";
-import { distributeSets, suggestWeight } from "../rp.js";
+import { CUSTOM_MESO_ID } from "../data.js";
+import { distributeSets, suggestWeight, MUSCLE_GROUPS } from "../rp.js";
 
 export async function render(container) {
   const active = await data.getActiveMesocycle();
-  if (!active) {
-    container.append(
-      el("div", { class: "banner" },
-        "No active mesocycle. ",
-        el("a", { href: "#/meso/new" }, "Plan one"),
-        " first.",
+  let mode = active ? "meso" : "custom";
+
+  const root = el("div", {});
+  container.append(root);
+
+  async function fullRender() {
+    root.replaceChildren();
+
+    root.append(
+      el("div", { class: "section-title" },
+        el("h1", {}, "Train"),
+        el("div", { class: "row" },
+          el("button", {
+            class: "btn small" + (mode === "meso" ? " primary" : ""),
+            onclick: () => { mode = "meso"; fullRender(); },
+            disabled: !active ? true : null,
+          }, "Mesocycle"),
+          el("button", {
+            class: "btn small" + (mode === "custom" ? " primary" : ""),
+            onclick: () => { mode = "custom"; fullRender(); },
+          }, "Custom"),
+        ),
       ),
     );
-    return;
+
+    if (mode === "meso") {
+      if (!active) {
+        root.append(
+          el("div", { class: "banner" },
+            "No active mesocycle. ",
+            el("a", { href: "#/meso/new" }, "Plan one"),
+            " first, or switch to Custom mode.",
+          ),
+        );
+        return;
+      }
+      await renderMesoMode(root, active);
+    } else {
+      await renderCustomMode(root);
+    }
   }
 
+  fullRender();
+}
+
+// ── Mesocycle mode ──
+
+async function renderMesoMode(root, active) {
   const template = await data.getTemplate(active.id);
   const weeks = +active.weeks;
 
@@ -25,17 +63,7 @@ export async function render(container) {
   let chosenWeek = defaultWeek;
   let chosenDay = template[0]?.index ?? 0;
 
-  const root = el("div", {});
-  container.append(root);
-
-  const session = {
-    startTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
-    endTime: "",
-    location: localStorage.getItem("rp.lastLocation") || "",
-    totalRPE: "",
-    leafStatus: "No",
-    notes: "",
-  };
+  const session = defaultSessionState();
 
   async function loadExistingSession() {
     const existing = await data.getSession(active.id, chosenWeek, chosenDay, isoToday());
@@ -66,12 +94,14 @@ export async function render(container) {
     );
   }
 
+  const mesoRoot = el("div", {});
+  root.append(mesoRoot);
+
   async function rerender() {
     await loadExistingSession();
-    root.replaceChildren();
-    root.append(
-      el("h1", {}, "Train"),
-      el("div", { class: "muted" }, active.name),
+    mesoRoot.replaceChildren();
+    mesoRoot.append(
+      el("div", { class: "muted", style: { marginBottom: "0.75rem" } }, active.name),
       el("section", { class: "card" },
         el("div", { class: "field-row" },
           el("div", { class: "field" },
@@ -100,71 +130,11 @@ export async function render(container) {
       ),
     );
 
-    // Session metadata
-    root.append(
-      el("section", { class: "card session-meta" },
-        el("h3", {}, "Session info"),
-        el("div", { class: "field-row four" },
-          el("div", { class: "field" },
-            el("label", {}, "Start time"),
-            el("input", {
-              type: "time", value: session.startTime,
-              oninput: (e) => (session.startTime = e.target.value),
-            }),
-          ),
-          el("div", { class: "field" },
-            el("label", {}, "End time"),
-            el("input", {
-              type: "time", value: session.endTime,
-              placeholder: "auto on save",
-              oninput: (e) => (session.endTime = e.target.value),
-            }),
-          ),
-          el("div", { class: "field" },
-            el("label", {}, "Location"),
-            el("input", {
-              type: "text", value: session.location,
-              placeholder: "e.g. Home gym",
-              oninput: (e) => (session.location = e.target.value),
-            }),
-          ),
-          el("div", { class: "field" },
-            el("label", {}, "Total RPE"),
-            el("select", {
-              onchange: (e) => (session.totalRPE = e.target.value),
-            },
-              el("option", { value: "", selected: !session.totalRPE ? "" : null }, "—"),
-              ...[1,2,3,4,5,6,7,8,9,10].map((n) =>
-                el("option", { value: n, selected: String(session.totalRPE) === String(n) ? "" : null }, String(n))),
-            ),
-          ),
-        ),
-        el("div", { class: "field-row" },
-          el("div", { class: "field" },
-            el("label", {}, "Leaf status"),
-            el("select", {
-              onchange: (e) => (session.leafStatus = e.target.value),
-            },
-              el("option", { value: "No", selected: session.leafStatus !== "Yes" ? "" : null }, "No"),
-              el("option", { value: "Yes", selected: session.leafStatus === "Yes" ? "" : null }, "Yes"),
-            ),
-          ),
-          el("div", { class: "field" },
-            el("label", {}, "Session notes"),
-            el("input", {
-              type: "text", value: session.notes,
-              placeholder: "Optional",
-              oninput: (e) => (session.notes = e.target.value),
-            }),
-          ),
-        ),
-        el("button", { class: "btn primary small", onclick: saveSessionMeta }, "Save session info"),
-      ),
-    );
+    mesoRoot.append(buildSessionMetaForm(session, saveSessionMeta));
 
     const day = template.find((d) => d.index === chosenDay);
     if (!day) return;
-    renderSession(root, active, chosenWeek, day);
+    await renderSession(mesoRoot, active, chosenWeek, day);
   }
 
   rerender();
@@ -174,20 +144,15 @@ async function renderSession(container, meso, week, day) {
   const plan = await data.getWeekPlan(meso.id);
   const weekPlan = plan.filter((p) => p.week === week);
 
-  // Distribute weekly target sets across exercises that share a muscle group.
   const byGroup = {};
   for (const ex of day.exercises) {
     (byGroup[ex.muscleGroup] ||= []).push(ex);
   }
   const allDays = await data.getTemplate(meso.id);
 
-  // For each muscle group, figure out per-exercise set targets for THIS day.
-  // The weekly target gets shared across all days that train the group,
-  // proportional to how many exercises each day has for it.
-  const dayShareForExercise = new Map(); // exerciseName -> sets target
+  const dayShareForExercise = new Map();
   for (const [group, exs] of Object.entries(byGroup)) {
     const weeklyTarget = weekPlan.find((p) => p.muscleGroup === group)?.targetSets || 0;
-    // Count total exercises for this group across the week.
     const totalAcrossWeek = allDays.reduce(
       (n, d) => n + d.exercises.filter((e) => e.muscleGroup === group).length,
       0,
@@ -225,7 +190,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
   ]);
 
   const suggested = prev
-    ? suggestWeight(prev, /*targetReps*/ Math.max(6, +prev.reps || 8), targetRIR)
+    ? suggestWeight(prev, Math.max(6, +prev.reps || 8), targetRIR)
     : null;
 
   const block = el("div", { class: "exercise-block" });
@@ -262,8 +227,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
   const drafts = [];
   function renderSets() {
     setsContainer.replaceChildren();
-
-    // Header
     setsContainer.append(
       el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
         el("div", {}, "#"),
@@ -274,7 +237,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
       ),
     );
 
-    // Existing logged sets (locked)
     logged.forEach((s, i) => {
       setsContainer.append(
         el("div", { class: "set-row set-done" },
@@ -287,9 +249,10 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
       );
     });
 
-    // Drafts (editable, unsaved)
     drafts.forEach((d, i) => {
       const setNo = logged.length + i + 1;
+      const logBtn = el("button", { class: "btn small primary" }, "Log");
+      logBtn.onclick = withLoading(logBtn, () => saveDraft(i));
       setsContainer.append(
         el("div", { class: "set-row" },
           el("div", { class: "idx" }, setNo),
@@ -311,12 +274,11 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
             value: d.rir,
             oninput: (e) => (d.rir = e.target.value),
           }),
-          el("button", { class: "btn small primary", onclick: () => saveDraft(i) }, "Log"),
+          logBtn,
         ),
       );
     });
 
-    // Action row
     const remaining = Math.max(0, setTarget - logged.length - drafts.length);
     setsContainer.append(
       el("div", { class: "row", style: { marginTop: "0.6rem", justifyContent: "space-between" } },
@@ -360,9 +322,219 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     renderSets();
   }
 
-  // Auto-seed first draft if no sets yet.
   if (!logged.length) addDraft();
   else renderSets();
 
   return block;
+}
+
+// ── Custom mode ──
+
+async function renderCustomMode(root) {
+  const exerciseLib = await data.getFullExerciseLibrary();
+  const exercises = [];
+  let filterGroup = "";
+
+  const session = defaultSessionState();
+
+  async function saveSessionMeta() {
+    if (!session.endTime) {
+      session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    if (session.location) localStorage.setItem("rp.lastLocation", session.location);
+    await run(
+      data.saveSession({
+        mesoId: CUSTOM_MESO_ID,
+        week: 0,
+        dayIndex: 0,
+        date: isoToday(),
+        ...session,
+      }),
+      { ok: "Session saved" },
+    );
+  }
+
+  const customRoot = el("div", {});
+  root.append(customRoot);
+
+  function rerender() {
+    customRoot.replaceChildren();
+    customRoot.append(
+      el("p", { class: "muted" }, "Log sets for any exercise without a mesocycle plan."),
+    );
+
+    customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
+
+    const filteredLib = filterGroup
+      ? exerciseLib.filter((e) => e.group === filterGroup)
+      : exerciseLib;
+
+    customRoot.append(
+      el("section", { class: "card" },
+        el("h3", {}, "Add exercise"),
+        el("div", { class: "exercise-picker" },
+          el("div", { class: "field" },
+            el("label", {}, "Filter by muscle"),
+            el("select", {
+              onchange: (e) => { filterGroup = e.target.value; rerender(); },
+            },
+              el("option", { value: "" }, "All muscles"),
+              ...MUSCLE_GROUPS.map((g) =>
+                el("option", { value: g, selected: filterGroup === g ? "" : null }, g)),
+            ),
+          ),
+          el("div", { class: "field" },
+            el("label", {}, "Exercise"),
+            el("select", { id: "custom-exercise-select" },
+              el("option", { value: "" }, "— pick —"),
+              ...filteredLib.map((e) =>
+                el("option", { value: e.name },
+                  `${e.name}${e.equipment ? ` (${e.equipment})` : ""}`)),
+            ),
+          ),
+          el("button", {
+            class: "btn primary",
+            onclick: () => {
+              const sel = document.getElementById("custom-exercise-select");
+              const name = sel.value;
+              if (!name) return toast("Pick an exercise", "bad");
+              const lib = exerciseLib.find((e) => e.name === name);
+              if (exercises.some((e) => e.exercise === name)) return toast("Already added", "bad");
+              exercises.push({
+                exercise: name,
+                muscleGroup: lib?.group || "",
+                sets: [],
+              });
+              rerender();
+            },
+          }, "+ Add"),
+        ),
+      ),
+    );
+
+    if (!exercises.length) {
+      customRoot.append(el("p", { class: "muted" }, "Add exercises above to start logging."));
+      return;
+    }
+
+    for (const ex of exercises) {
+      customRoot.append(buildCustomBlock(ex));
+    }
+  }
+
+  function buildCustomBlock(ex) {
+    const block = el("div", { class: "exercise-block" });
+    block.append(
+      el("div", { class: "exercise-head" },
+        el("div", {},
+          el("h3", {}, ex.exercise),
+          el("div", { class: "exercise-meta" },
+            el("span", { class: "pill" }, ex.muscleGroup),
+          ),
+        ),
+        el("button", {
+          class: "btn small danger ghost",
+          onclick: () => {
+            exercises.splice(exercises.indexOf(ex), 1);
+            rerender();
+          },
+        }, "Remove"),
+      ),
+    );
+
+    const setsContainer = el("div", {});
+    block.append(setsContainer);
+
+    function renderSets() {
+      setsContainer.replaceChildren();
+      setsContainer.append(
+        el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
+          el("div", {}, "#"),
+          el("div", {}, "Weight"),
+          el("div", {}, "Reps"),
+          el("div", {}, "RIR"),
+          el("div", {}, ""),
+        ),
+      );
+
+      ex.sets.forEach((s, i) => {
+        if (s.saved) {
+          setsContainer.append(
+            el("div", { class: "set-row set-done" },
+              el("div", { class: "idx" }, i + 1),
+              el("div", {}, s.weight),
+              el("div", {}, s.reps),
+              el("div", {}, s.rir),
+              el("span", { class: "muted small" }, "✓"),
+            ),
+          );
+        } else {
+          const logBtn = el("button", { class: "btn small primary" }, "Log");
+          logBtn.onclick = withLoading(logBtn, async () => {
+            if (!s.weight || !s.reps) return toast("Need weight and reps", "bad");
+            await run(
+              data.logSet({
+                mesoId: CUSTOM_MESO_ID,
+                week: 0,
+                dayIndex: 0,
+                exercise: ex.exercise,
+                muscleGroup: ex.muscleGroup,
+                setNumber: i + 1,
+                weight: +s.weight,
+                reps: +s.reps,
+                rir: +(s.rir || 0),
+                date: isoToday(),
+              }),
+              { ok: "Set logged" },
+            );
+            s.saved = true;
+            renderSets();
+          });
+          setsContainer.append(
+            el("div", { class: "set-row" },
+              el("div", { class: "idx" }, i + 1),
+              el("input", {
+                type: "number", inputmode: "decimal", step: "0.5",
+                placeholder: "wt", value: s.weight,
+                oninput: (e) => (s.weight = e.target.value),
+              }),
+              el("input", {
+                type: "number", inputmode: "numeric",
+                placeholder: "reps", value: s.reps,
+                oninput: (e) => (s.reps = e.target.value),
+              }),
+              el("input", {
+                type: "number", inputmode: "numeric", min: "0", max: "10",
+                placeholder: "RIR", value: s.rir,
+                oninput: (e) => (s.rir = e.target.value),
+              }),
+              logBtn,
+            ),
+          );
+        }
+      });
+
+      setsContainer.append(
+        el("button", {
+          class: "btn small", style: { marginTop: "0.6rem" },
+          onclick: () => {
+            const prev = ex.sets.filter((s) => s.saved).pop();
+            ex.sets.push({
+              weight: prev?.weight || "",
+              reps: prev?.reps || "",
+              rir: prev?.rir || "",
+              saved: false,
+            });
+            renderSets();
+          },
+        }, "+ Add set"),
+      );
+    }
+
+    ex.sets.push({ weight: "", reps: "", rir: "", saved: false });
+    renderSets();
+    return block;
+  }
+
+  rerender();
 }

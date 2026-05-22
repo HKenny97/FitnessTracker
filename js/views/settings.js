@@ -1,8 +1,8 @@
-import { el, run, toast } from "../ui.js";
+import { el, run, toast, withLoading } from "../ui.js";
 import { config, setClientId } from "../config.js";
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
-import { MUSCLE_GROUPS } from "../rp.js";
+import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
 
 export async function render(container) {
   container.append(el("h1", {}, "Settings"));
@@ -155,5 +155,76 @@ export async function render(container) {
     }
     card.append(table);
     container.append(card);
+
+    // Custom exercises management.
+    const customExCard = el("section", { class: "card" },
+      el("h2", {}, "Custom exercises"),
+      el("p", { class: "muted small" },
+        "Add exercises not in the built-in library. They'll appear in all exercise pickers."),
+    );
+
+    const newEx = { name: "", group: MUSCLE_GROUPS[0], equipment: "" };
+    const form = el("div", { class: "field-row three", style: { marginBottom: "0.75rem" } },
+      el("div", { class: "field" },
+        el("label", {}, "Name"),
+        el("input", {
+          type: "text", placeholder: "e.g. Pendlay Row",
+          oninput: (e) => (newEx.name = e.target.value),
+        }),
+      ),
+      el("div", { class: "field" },
+        el("label", {}, "Muscle group"),
+        el("select", { onchange: (e) => (newEx.group = e.target.value) },
+          ...MUSCLE_GROUPS.map((g) => el("option", { value: g }, g)),
+        ),
+      ),
+      el("div", { class: "field" },
+        el("label", {}, "Equipment"),
+        el("select", { onchange: (e) => (newEx.equipment = e.target.value) },
+          el("option", { value: "" }, "— optional —"),
+          ...EQUIPMENT_TYPES.map((eq) => el("option", { value: eq }, eq)),
+        ),
+      ),
+    );
+
+    const addBtn = el("button", { class: "btn primary small" }, "Add exercise");
+    addBtn.onclick = withLoading(addBtn, async () => {
+      if (!newEx.name.trim()) return toast("Name is required", "bad");
+      await run(data.addCustomExercise(newEx), { ok: "Exercise added" });
+      newEx.name = "";
+      await renderCustomList();
+    });
+    customExCard.append(form, addBtn);
+
+    const customListContainer = el("div", {});
+    customExCard.append(customListContainer);
+
+    async function renderCustomList() {
+      const customs = await data.listCustomExercises();
+      customListContainer.replaceChildren();
+      if (!customs.length) return;
+      customListContainer.append(el("h3", { style: { marginTop: "1rem" } }, "Your exercises"));
+      for (const c of customs) {
+        const row = el("div", { class: "card-row", style: { padding: "0.4rem 0", borderBottom: "1px solid var(--line)" } },
+          el("div", {},
+            el("strong", {}, c.name),
+            el("span", { class: "muted small", style: { marginLeft: "0.5rem" } },
+              `${c.group}${c.equipment ? " · " + c.equipment : ""}`),
+          ),
+          el("button", {
+            class: "btn small danger ghost",
+            onclick: async () => {
+              if (!confirm(`Delete "${c.name}"?`)) return;
+              await run(data.deleteCustomExercise(c.id), { ok: "Deleted" });
+              await renderCustomList();
+            },
+          }, "×"),
+        );
+        customListContainer.append(row);
+      }
+    }
+
+    await renderCustomList();
+    container.append(customExCard);
   }
 }

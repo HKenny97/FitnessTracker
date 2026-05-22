@@ -1,11 +1,17 @@
-import { el, fmtDate } from "../ui.js";
+import { el, fmtDate, isoToday } from "../ui.js";
 import * as data from "../data.js";
+import { CUSTOM_MESO_ID } from "../data.js";
 
 export async function render(container) {
-  const [sessions, sets] = await Promise.all([
+  const [sessions, sets, allMesos, cardioEntries] = await Promise.all([
     data.listSessions(),
     data.listSets(),
+    data.listMesocycles(),
+    data.listCardio(),
   ]);
+
+  const mesoById = {};
+  for (const m of allMesos) mesoById[m.id] = m;
 
   let viewMode = "list";
   let calMonth = new Date().getMonth();
@@ -37,7 +43,6 @@ export async function render(container) {
   }
 
   function renderList() {
-    // Group sets by date to build session summaries even without explicit session records.
     const byDate = new Map();
     for (const s of sets) {
       const key = s.date;
@@ -45,7 +50,6 @@ export async function render(container) {
       byDate.get(key).push(s);
     }
 
-    // Merge session metadata where available.
     const sessionByDate = new Map();
     for (const s of sessions) {
       const key = s.date;
@@ -53,8 +57,14 @@ export async function render(container) {
       sessionByDate.get(key).push(s);
     }
 
-    // All unique dates, sorted newest first.
-    const allDates = [...new Set([...byDate.keys(), ...sessionByDate.keys()])]
+    const cardioByDate = new Map();
+    for (const c of cardioEntries) {
+      const key = c.date;
+      if (!cardioByDate.has(key)) cardioByDate.set(key, []);
+      cardioByDate.get(key).push(c);
+    }
+
+    const allDates = [...new Set([...byDate.keys(), ...sessionByDate.keys(), ...cardioByDate.keys()])]
       .sort((a, b) => b.localeCompare(a));
 
     if (!allDates.length) {
@@ -65,8 +75,8 @@ export async function render(container) {
     for (const date of allDates) {
       const dateSets = byDate.get(date) || [];
       const dateSessions = sessionByDate.get(date) || [];
+      const dateCardio = cardioByDate.get(date) || [];
 
-      // Summarize muscles hit and total sets.
       const muscleMap = {};
       for (const s of dateSets) {
         muscleMap[s.muscleGroup] = (muscleMap[s.muscleGroup] || 0) + 1;
@@ -77,7 +87,6 @@ export async function render(container) {
 
       const card = el("div", { class: "card history-card" });
 
-      // Header row
       const meta = dateSessions[0];
       const timeStr = meta?.startTime && meta?.endTime
         ? `${meta.startTime} – ${meta.endTime}`
@@ -97,23 +106,21 @@ export async function render(container) {
         ),
       );
 
-      // Location + meso info
       const infoParts = [];
       if (meta?.location) infoParts.push(meta.location);
-      if (meta?.mesoId && meta.mesoId !== "_custom") {
-        const meso = await data.getMesocycle(meta.mesoId);
+      if (meta?.mesoId && meta.mesoId !== CUSTOM_MESO_ID) {
+        const meso = mesoById[meta.mesoId];
         if (meso) infoParts.push(`${meso.name} · W${meta.week}`);
-      } else if (dateSets.length && dateSets[0].mesoId === "_custom") {
+      } else if (dateSets.length && dateSets[0].mesoId === CUSTOM_MESO_ID) {
         infoParts.push("Custom workout");
       } else if (dateSets.length) {
-        const meso = await data.getMesocycle(dateSets[0].mesoId);
+        const meso = mesoById[dateSets[0].mesoId];
         if (meso) infoParts.push(`${meso.name} · W${dateSets[0].week}`);
       }
       if (infoParts.length) {
         card.append(el("div", { class: "muted small", style: { marginTop: "0.25rem" } }, infoParts.join(" · ")));
       }
 
-      // Muscles hit
       if (muscles.length) {
         card.append(
           el("div", { class: "history-muscles" },
@@ -122,7 +129,19 @@ export async function render(container) {
         );
       }
 
-      // Session notes
+      for (const c of dateCardio) {
+        const parts = [c.cardioType];
+        if (c.duration) parts.push(`${c.duration} min`);
+        if (c.distance) parts.push(`${c.distance} km`);
+        if (c.avgHeartRate) parts.push(`${c.avgHeartRate} bpm`);
+        card.append(
+          el("div", { class: "history-muscles", style: { marginTop: "0.35rem" } },
+            el("span", { class: "pill small cardio-pill" }, "Cardio"),
+            el("span", { class: "muted small" }, parts.join(" · ")),
+          ),
+        );
+      }
+
       if (meta?.notes) {
         card.append(el("div", { class: "muted small", style: { marginTop: "0.4rem", fontStyle: "italic" } }, meta.notes));
       }
@@ -132,23 +151,26 @@ export async function render(container) {
   }
 
   function renderCalendar() {
-    // Collect all dates that have sets or sessions.
     const activeDates = new Set();
     for (const s of sets) activeDates.add(s.date);
     for (const s of sessions) activeDates.add(s.date);
+    for (const c of cardioEntries) activeDates.add(c.date);
 
-    // Session metadata by date for tooltips.
     const sessionByDate = {};
     for (const s of sessions) sessionByDate[s.date] = s;
 
-    // Set counts by date.
     const setCountByDate = {};
     for (const s of sets) setCountByDate[s.date] = (setCountByDate[s.date] || 0) + 1;
+
+    const cardioByDate = {};
+    for (const c of cardioEntries) {
+      if (!cardioByDate[c.date]) cardioByDate[c.date] = [];
+      cardioByDate[c.date].push(c);
+    }
 
     const monthNames = ["January", "February", "March", "April", "May", "June",
       "July", "August", "September", "October", "November", "December"];
 
-    // Nav
     root.append(
       el("div", { class: "cal-nav" },
         el("button", { class: "btn small ghost", onclick: () => {
@@ -165,21 +187,16 @@ export async function render(container) {
       ),
     );
 
-    // Build the grid.
     const grid = el("div", { class: "cal-grid" });
-
-    // Day headers
     for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
       grid.append(el("div", { class: "cal-header" }, d));
     }
 
     const firstDay = new Date(calYear, calMonth, 1);
-    // Monday = 0, Sunday = 6
     let startOffset = (firstDay.getDay() + 6) % 7;
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoToday();
 
-    // Empty cells before the 1st.
     for (let i = 0; i < startOffset; i++) {
       grid.append(el("div", { class: "cal-cell empty" }));
     }
@@ -190,6 +207,7 @@ export async function render(container) {
       const isToday = iso === today;
       const session = sessionByDate[iso];
       const setCount = setCountByDate[iso] || 0;
+      const cardio = cardioByDate[iso];
 
       const classes = ["cal-cell"];
       if (hasWorkout) classes.push("has-workout");
@@ -205,6 +223,11 @@ export async function render(container) {
         if (session?.totalRPE) details.push(`RPE ${session.totalRPE}`);
         if (session?.location) details.push(session.location);
         if (session?.leafStatus === "Yes") details.push("Leaf");
+        if (cardio) {
+          for (const c of cardio) {
+            details.push(`${c.cardioType} ${c.duration}m`);
+          }
+        }
         if (details.length) {
           cell.append(el("div", { class: "cal-detail" }, details.join(" · ")));
         }
@@ -215,10 +238,10 @@ export async function render(container) {
 
     root.append(grid);
 
-    // Stats summary for the month
-    const monthDates = [...activeDates].filter((d) =>
-      d.startsWith(`${calYear}-${String(calMonth + 1).padStart(2, "0")}`));
+    const monthPrefix = `${calYear}-${String(calMonth + 1).padStart(2, "0")}`;
+    const monthDates = [...activeDates].filter((d) => d.startsWith(monthPrefix));
     const totalSets = monthDates.reduce((n, d) => n + (setCountByDate[d] || 0), 0);
+    const cardioCount = cardioEntries.filter((c) => c.date.startsWith(monthPrefix)).length;
 
     root.append(
       el("div", { class: "card", style: { marginTop: "1rem" } },
@@ -226,6 +249,7 @@ export async function render(container) {
           el("div", {},
             el("strong", {}, `${monthDates.length} workout${monthDates.length !== 1 ? "s" : ""}`),
             el("span", { class: "muted", style: { marginLeft: "1rem" } }, `${totalSets} total sets`),
+            cardioCount > 0 && el("span", { class: "muted", style: { marginLeft: "1rem" } }, `${cardioCount} cardio`),
           ),
         ),
       ),

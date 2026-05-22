@@ -1,13 +1,14 @@
 import * as sheets from "./sheets.js";
+import { isoToday } from "./ui.js";
 import {
   DEFAULT_LANDMARKS,
+  EXERCISE_LIBRARY,
   MUSCLE_GROUPS,
   progressRIR,
   progressSets,
 } from "./rp.js";
 
-// Higher-level data operations. Reads call through to sheets.js but cache
-// results for the lifetime of the page; writes invalidate the relevant cache.
+export const CUSTOM_MESO_ID = "_custom";
 
 const cache = new Map();
 function invalidate(key) { cache.delete(key); }
@@ -196,7 +197,7 @@ export async function logSet(set) {
     mesoId: set.mesoId,
     week: set.week,
     dayIndex: set.dayIndex,
-    date: set.date || new Date().toISOString().slice(0, 10),
+    date: set.date || isoToday(),
     exercise: set.exercise,
     muscleGroup: set.muscleGroup,
     setNumber: set.setNumber,
@@ -287,6 +288,80 @@ export async function saveSession(session) {
     await sheets.appendRow("sessions", row);
   }
   invalidate("sessions");
+}
+
+// Delete a mesocycle and all related data.
+export async function deleteMesocycle(id) {
+  const [allMesos, allDays, allEx, allPlan, allSets, allSessions] = await Promise.all([
+    sheets.readAll("mesocycles"),
+    sheets.readAll("templateDays"),
+    sheets.readAll("templateExercises"),
+    sheets.readAll("weekPlan"),
+    sheets.readAll("sets"),
+    sheets.readAll("sessions"),
+  ]);
+  await Promise.all([
+    sheets.replaceAll("mesocycles", allMesos.filter((m) => m.id !== id)),
+    sheets.replaceAll("templateDays", allDays.filter((d) => d.mesoId !== id)),
+    sheets.replaceAll("templateExercises", allEx.filter((e) => e.mesoId !== id)),
+    sheets.replaceAll("weekPlan", allPlan.filter((p) => p.mesoId !== id)),
+    sheets.replaceAll("sets", allSets.filter((s) => s.mesoId !== id)),
+    sheets.replaceAll("sessions", allSessions.filter((s) => s.mesoId !== id)),
+  ]);
+  for (const k of ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions"]) invalidate(k);
+}
+
+// Custom exercises.
+export async function listCustomExercises() {
+  return cached("customExercises", () => sheets.readAll("customExercises"));
+}
+
+export async function addCustomExercise({ name, group, equipment }) {
+  const row = { id: newId(), name, group, equipment: equipment || "", createdAt: new Date().toISOString() };
+  await sheets.appendRow("customExercises", row);
+  invalidate("customExercises");
+  return row;
+}
+
+export async function deleteCustomExercise(id) {
+  const all = await sheets.readAll("customExercises");
+  await sheets.replaceAll("customExercises", all.filter((e) => e.id !== id));
+  invalidate("customExercises");
+}
+
+export async function getFullExerciseLibrary() {
+  const custom = await listCustomExercises();
+  const byName = new Map();
+  for (const e of EXERCISE_LIBRARY) byName.set(e.name.toLowerCase(), e);
+  for (const c of custom) byName.set(c.name.toLowerCase(), { name: c.name, group: c.group, equipment: c.equipment });
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Cardio.
+export async function listCardio() {
+  return cached("cardio", () => sheets.readAll("cardio"));
+}
+
+export async function logCardio({ date, cardioType, duration, distance, avgHeartRate, perceivedDifficulty, notes }) {
+  const row = {
+    id: newId(),
+    date: date || isoToday(),
+    cardioType,
+    duration: String(duration),
+    distance: distance ? String(distance) : "",
+    avgHeartRate: avgHeartRate ? String(avgHeartRate) : "",
+    perceivedDifficulty: perceivedDifficulty ? String(perceivedDifficulty) : "",
+    notes: notes || "",
+  };
+  await sheets.appendRow("cardio", row);
+  invalidate("cardio");
+  return row;
+}
+
+export async function deleteCardioEntry(id) {
+  const all = await sheets.readAll("cardio");
+  await sheets.replaceAll("cardio", all.filter((c) => c.id !== id));
+  invalidate("cardio");
 }
 
 // Counts how many sets each muscle group has accumulated in a given week.

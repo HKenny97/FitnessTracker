@@ -4,7 +4,7 @@ import { route, dispatch, onRender, currentHash } from "./router.js";
 import * as dashboard from "./views/dashboard.js";
 import * as meso from "./views/meso.js";
 import * as workout from "./views/workout.js";
-import * as custom from "./views/custom.js";
+import * as cardio from "./views/cardio.js";
 import * as history from "./views/history.js";
 import * as settings from "./views/settings.js";
 import { el, clear, toast } from "./ui.js";
@@ -17,7 +17,7 @@ function setActiveTab() {
   const tab =
     hash.startsWith("#/meso") ? "meso" :
     hash.startsWith("#/workout") ? "workout" :
-    hash.startsWith("#/custom") ? "custom" :
+    hash.startsWith("#/cardio") ? "cardio" :
     hash.startsWith("#/history") ? "history" :
     hash.startsWith("#/settings") ? "settings" : "dashboard";
   for (const a of document.querySelectorAll(".tabs a")) {
@@ -49,8 +49,6 @@ function renderAuth(state) {
   }
 }
 
-// Wire up routes. Each handler is wrapped to: clear the view, show loading,
-// catch errors, and update active tab.
 function wrap(fn) {
   return async (params) => {
     clear(view);
@@ -78,14 +76,12 @@ route("/meso", wrap(async (root) => meso.renderList(root)));
 route("/meso/new", wrap(async (root) => meso.renderNew(root)));
 route("/meso/:id", wrap(async (root, p) => meso.renderDetail(root, p.id)));
 route("/workout", wrap(async (root) => workout.render(root)));
-route("/custom", wrap(async (root) => custom.render(root)));
+route("/cardio", wrap(async (root) => cardio.render(root)));
 route("/history", wrap(async (root) => history.render(root)));
 route("/settings", wrap(async (root) => settings.render(root)));
 
 onRender((handler, params) => handler(params));
 
-// Hook the hero's sign-in button (delegated, since the hero is rendered
-// inside the view container each time the dashboard mounts).
 document.addEventListener("click", (e) => {
   if (e.target.id === "sign-in-btn") {
     e.preventDefault();
@@ -93,9 +89,11 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Boot.
 (async () => {
   await auth.init();
+  if (auth.didSilentRestoreFail()) {
+    toast("Session expired — please sign in again", "warn");
+  }
   auth.onAuthChange((state) => {
     renderAuth(state);
     dispatch();

@@ -775,6 +775,16 @@ export const PROGRAM_TEMPLATES = [
   },
 ];
 
+export const EQUIPMENT_TYPES = [
+  "barbell", "dumbbell", "machine", "cable", "bodyweight",
+  "smith machine", "band", "kettlebell",
+];
+
+export const CARDIO_TYPES = [
+  "Running", "Cycling", "Swimming", "Rowing", "Elliptical",
+  "Stair Climber", "Walking", "HIIT", "Jump Rope", "Hiking",
+];
+
 // Generate weekly set-count progression from MEV to MRV across `weeks`
 // accumulation weeks, ending in a deload at ~50% of week-1 sets.
 export function progressSets(MEV, MRV, weeks) {

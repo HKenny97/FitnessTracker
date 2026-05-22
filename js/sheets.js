@@ -86,6 +86,14 @@ const TABS = {
       "notes",
     ],
   },
+  customExercises: {
+    title: "CustomExercises",
+    headers: ["id", "name", "group", "equipment", "createdAt"],
+  },
+  cardio: {
+    title: "Cardio",
+    headers: ["id", "date", "cardioType", "duration", "distance", "avgHeartRate", "perceivedDifficulty", "notes"],
+  },
 };
 
 export function getSpreadsheetId() {
