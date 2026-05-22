@@ -308,6 +308,34 @@ input[type="number"] {
 .spacer { flex: 1; }
 .hide { display: none !important; }
 
+/* Template picker grid */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.template-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  min-height: auto;
+}
+.template-btn strong { font-size: 0.95rem; }
+
+/* Custom workout log */
+.exercise-picker {
+  display: flex;
+  gap: 0.5rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.exercise-picker > * { flex: 1; min-width: 160px; }
+.exercise-picker .btn { flex: 0; min-width: auto; }
+
 @media (max-width: 540px) {
   .topbar { grid-template-columns: 1fr auto; }
   .topbar .tabs { grid-column: 1 / -1; order: 3; padding-top: 0.4rem; }

@@ -1,6 +1,6 @@
 import { el, isoToday, run, fmtDate, toast } from "../ui.js";
 import * as data from "../data.js";
-import { EXERCISE_LIBRARY, MUSCLE_GROUPS, progressSets, progressRIR } from "../rp.js";
+import { EXERCISE_LIBRARY, MUSCLE_GROUPS, PROGRAM_TEMPLATES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
 
 export async function renderList(container) {
@@ -70,9 +70,37 @@ export async function renderNew(container) {
     container.append(buildForm());
   }
 
+  function applyTemplate(tpl) {
+    state.days = tpl.days.map((d) => ({
+      name: d.name,
+      exercises: d.exercises.map((e) => ({ exercise: e.exercise, muscleGroup: e.muscleGroup })),
+    }));
+    state.name = tpl.name + " — " + new Date().toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    rerender();
+  }
+
   function buildForm() {
     const wrap = el("div", {});
     wrap.append(el("h1", {}, "New mesocycle"));
+
+    // Template picker
+    wrap.append(
+      el("section", { class: "card" },
+        el("h2", {}, "Start from a template"),
+        el("p", { class: "muted small" }, "Pick a program to pre-fill days and exercises, or skip and build your own below."),
+        el("div", { class: "template-grid" },
+          ...PROGRAM_TEMPLATES.map((tpl) =>
+            el("button", {
+              class: "btn template-btn",
+              onclick: () => applyTemplate(tpl),
+            },
+              el("strong", {}, tpl.name),
+              el("span", { class: "muted small" }, `${tpl.days.length} days`),
+            ),
+          ),
+        ),
+      ),
+    );
 
     wrap.append(
       el("div", { class: "card" },
