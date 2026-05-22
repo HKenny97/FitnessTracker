@@ -119,7 +119,7 @@ export async function render(container, { signedIn }) {
     bwSaveBtn,
   );
   container.append(bwForm);
-  document.getElementById("bw-toggle").onclick = () => {
+  container.querySelector("#bw-toggle").onclick = () => {
     bwForm.style.display = bwForm.style.display === "none" ? "" : "none";
   };
 
