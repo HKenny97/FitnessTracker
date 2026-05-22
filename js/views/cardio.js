@@ -1,4 +1,4 @@
-import { el, fmtDate, isoToday, run, toast, withLoading } from "../ui.js";
+import { el, fmtDate, isoToday, run, toast, withLoading, confirmModal } from "../ui.js";
 import * as data from "../data.js";
 import { CARDIO_TYPES } from "../rp.js";
 
@@ -12,6 +12,8 @@ export async function render(container) {
     perceivedDifficulty: "",
     notes: "",
   };
+
+  let editingId = null;
 
   const root = el("div", {});
   container.append(root);
@@ -108,49 +110,107 @@ export async function render(container) {
       root.append(el("h2", { style: { marginTop: "1.5rem" } }, "Recent sessions"));
       const recent = entries.slice().reverse().slice(0, 20);
       for (const c of recent) {
-        const card = el("div", { class: "card history-card" });
-        const parts = [];
-        if (c.duration) parts.push(`${c.duration} min`);
-        if (c.distance) parts.push(`${c.distance} km`);
-        if (c.avgHeartRate) parts.push(`${c.avgHeartRate} bpm`);
-
-        card.append(
-          el("div", { class: "card-row" },
-            el("div", {},
-              el("strong", {}, fmtDate(c.date)),
-              el("span", { class: "pill small cardio-pill", style: { marginLeft: "0.5rem" } }, c.cardioType),
+        if (editingId === c.id) {
+          const ed = {
+            cardioType: c.cardioType, date: c.date, duration: c.duration,
+            distance: c.distance, avgHeartRate: c.avgHeartRate,
+            perceivedDifficulty: c.perceivedDifficulty, notes: c.notes,
+          };
+          const saveBtn = el("button", { class: "btn small primary" }, "Save");
+          const cancelBtn = el("button", { class: "btn small" }, "Cancel");
+          cancelBtn.onclick = () => { editingId = null; fullRender(); };
+          saveBtn.onclick = withLoading(saveBtn, async () => {
+            await run(data.updateCardioEntry(c.id, ed), { ok: "Updated" });
+            editingId = null;
+            fullRender();
+          });
+          const editCard = el("div", { class: "card inline-edit" },
+            el("div", { class: "field-row" },
+              el("div", { class: "field" },
+                el("label", {}, "Type"),
+                el("select", { onchange: (e) => (ed.cardioType = e.target.value) },
+                  ...CARDIO_TYPES.map((t) =>
+                    el("option", { value: t, selected: ed.cardioType === t ? "" : null }, t)),
+                ),
+              ),
+              el("div", { class: "field" },
+                el("label", {}, "Date"),
+                el("input", { type: "date", value: ed.date, oninput: (e) => (ed.date = e.target.value) }),
+              ),
             ),
-            el("div", { class: "row" },
-              el("span", { class: "muted small" }, parts.join(" · ")),
-              el("button", {
-                class: "btn small danger ghost",
-                onclick: async () => {
-                  if (!confirm("Delete this cardio entry?")) return;
-                  await run(data.deleteCardioEntry(c.id), { ok: "Deleted" });
-                  fullRender();
-                },
-              }, "×"),
+            el("div", { class: "field-row three" },
+              el("div", { class: "field" },
+                el("label", {}, "Duration"),
+                el("input", { type: "number", value: ed.duration, oninput: (e) => (ed.duration = e.target.value) }),
+              ),
+              el("div", { class: "field" },
+                el("label", {}, "Distance"),
+                el("input", { type: "number", step: "0.1", value: ed.distance, oninput: (e) => (ed.distance = e.target.value) }),
+              ),
+              el("div", { class: "field" },
+                el("label", {}, "HR"),
+                el("input", { type: "number", value: ed.avgHeartRate, oninput: (e) => (ed.avgHeartRate = e.target.value) }),
+              ),
             ),
-          ),
-        );
+            el("div", { class: "field-row" },
+              el("div", { class: "field" },
+                el("label", {}, "Notes"),
+                el("input", { type: "text", value: ed.notes || "", oninput: (e) => (ed.notes = e.target.value) }),
+              ),
+            ),
+            el("div", { class: "btn-row" }, cancelBtn, saveBtn),
+          );
+          root.append(editCard);
+        } else {
+          const card = el("div", { class: "card history-card" });
+          const parts = [];
+          if (c.duration) parts.push(`${c.duration} min`);
+          if (c.distance) parts.push(`${c.distance} km`);
+          if (c.avgHeartRate) parts.push(`${c.avgHeartRate} bpm`);
 
-        if (c.perceivedDifficulty) {
-          const pct = (+c.perceivedDifficulty / 10) * 100;
           card.append(
-            el("div", { class: "cardio-stat", style: { marginTop: "0.35rem" } },
-              el("span", { class: "muted small" }, `Difficulty: ${c.perceivedDifficulty}/10`),
-              el("div", { class: "difficulty-bar" },
-                el("div", { class: "difficulty-fill", style: { width: `${pct}%` } }),
+            el("div", { class: "card-row" },
+              el("div", {},
+                el("strong", {}, fmtDate(c.date)),
+                el("span", { class: "pill small cardio-pill", style: { marginLeft: "0.5rem" } }, c.cardioType),
+              ),
+              el("div", { class: "row" },
+                el("span", { class: "muted small" }, parts.join(" · ")),
+                el("button", {
+                  class: "btn small ghost",
+                  onclick: () => { editingId = c.id; fullRender(); },
+                }, "✏"),
+                el("button", {
+                  class: "btn small danger ghost",
+                  onclick: () => {
+                    confirmModal("Delete this cardio entry?", async () => {
+                      await run(data.deleteCardioEntry(c.id), { ok: "Deleted" });
+                      fullRender();
+                    });
+                  },
+                }, "×"),
               ),
             ),
           );
-        }
 
-        if (c.notes) {
-          card.append(el("div", { class: "muted small", style: { marginTop: "0.3rem", fontStyle: "italic" } }, c.notes));
-        }
+          if (c.perceivedDifficulty) {
+            const pct = (+c.perceivedDifficulty / 10) * 100;
+            card.append(
+              el("div", { class: "cardio-stat", style: { marginTop: "0.35rem" } },
+                el("span", { class: "muted small" }, `Difficulty: ${c.perceivedDifficulty}/10`),
+                el("div", { class: "difficulty-bar" },
+                  el("div", { class: "difficulty-fill", style: { width: `${pct}%` } }),
+                ),
+              ),
+            );
+          }
 
-        root.append(card);
+          if (c.notes) {
+            card.append(el("div", { class: "muted small", style: { marginTop: "0.3rem", fontStyle: "italic" } }, c.notes));
+          }
+
+          root.append(card);
+        }
       }
     }
   }

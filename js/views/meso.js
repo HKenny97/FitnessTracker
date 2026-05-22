@@ -1,4 +1,4 @@
-import { el, isoToday, run, fmtDate, toast, withLoading } from "../ui.js";
+import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal } from "../ui.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
@@ -337,12 +337,27 @@ export async function renderDetail(container, id) {
     actionBtns.push(btn);
   }
   const deleteBtn = el("button", { class: "btn danger ghost" }, "Delete");
-  deleteBtn.onclick = withLoading(deleteBtn, async () => {
-    if (!confirm("Delete this mesocycle and all its data? This cannot be undone.")) return;
-    await run(data.deleteMesocycle(id), { ok: "Mesocycle deleted" });
-    navigate("#/meso");
-  });
+  deleteBtn.onclick = () => {
+    confirmModal("Delete this mesocycle and all its data? This cannot be undone.", async () => {
+      await run(data.deleteMesocycle(id), { ok: "Mesocycle deleted" });
+      navigate("#/meso");
+    });
+  };
   actionBtns.push(deleteBtn);
+
+  const editBtn = el("button", { class: "btn" }, "Edit");
+  editBtn.onclick = async () => {
+    container.replaceChildren();
+    await renderEdit(container, id);
+  };
+  actionBtns.push(editBtn);
+
+  const dupBtn = el("button", { class: "btn" }, "Duplicate");
+  dupBtn.onclick = withLoading(dupBtn, async () => {
+    const newId = await run(data.duplicateMesocycle(id), { ok: "Duplicated" });
+    if (newId) navigate(`#/meso/${newId}`);
+  });
+  actionBtns.push(dupBtn);
 
   container.append(
     el("div", { class: "section-title" },
@@ -406,4 +421,136 @@ export async function renderDetail(container, id) {
       ),
     );
   }
+}
+
+async function renderEdit(container, id) {
+  const [meso, template, landmarks, exerciseLib] = await Promise.all([
+    data.getMesocycle(id),
+    data.getTemplate(id),
+    data.getLandmarks(),
+    data.getFullExerciseLibrary(),
+  ]);
+  if (!meso) { container.append(el("p", {}, "Not found.")); return; }
+
+  const allSets = await data.listSets();
+  const hasLoggedSets = allSets.some((s) => s.mesoId === id);
+
+  const state = {
+    name: meso.name,
+    startDate: meso.startDate,
+    weeks: +meso.weeks,
+    notes: meso.notes || "",
+    days: template.map((d) => ({
+      name: d.name,
+      exercises: d.exercises.map((e) => ({ exercise: e.exercise, muscleGroup: e.muscleGroup, notes: e.notes || "" })),
+    })),
+  };
+
+  function rerender() {
+    container.replaceChildren();
+    container.append(buildEditForm());
+  }
+
+  function buildEditForm() {
+    const wrap = el("div", {});
+    wrap.append(el("h1", {}, "Edit mesocycle"));
+
+    if (hasLoggedSets) {
+      wrap.append(el("div", { class: "banner warn" }, "This mesocycle has logged sets. Editing the template won't change existing logged data."));
+    }
+
+    wrap.append(
+      el("div", { class: "card" },
+        el("div", { class: "field" },
+          el("label", {}, "Name"),
+          el("input", { type: "text", value: state.name, oninput: (e) => (state.name = e.target.value) }),
+        ),
+        el("div", { class: "field-row" },
+          el("div", { class: "field" },
+            el("label", {}, "Start date"),
+            el("input", { type: "date", value: state.startDate, oninput: (e) => (state.startDate = e.target.value) }),
+          ),
+          el("div", { class: "field" },
+            el("label", {}, "Weeks"),
+            el("select", { onchange: (e) => { state.weeks = +e.target.value; rerender(); } },
+              ...[4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) =>
+                el("option", { value: n, selected: state.weeks === n ? "" : null }, `${n} weeks`)),
+            ),
+          ),
+        ),
+        el("div", { class: "field" },
+          el("label", {}, "Notes"),
+          el("textarea", { rows: 2, oninput: (e) => (state.notes = e.target.value) }, state.notes),
+        ),
+      ),
+    );
+
+    wrap.append(el("div", { class: "section-title" }, el("h2", {}, "Training days")));
+    state.days.forEach((day, di) => {
+      const card = el("div", { class: "day-card" });
+      card.append(
+        el("div", { class: "day-card-head" },
+          el("input", { type: "text", value: day.name, style: { fontWeight: 700, fontSize: "1.05rem", maxWidth: "60%" }, oninput: (e) => (day.name = e.target.value) }),
+          el("button", { class: "btn small danger ghost", onclick: () => { state.days.splice(di, 1); rerender(); } }, "Remove day"),
+        ),
+      );
+      day.exercises.forEach((ex, ei) => {
+        card.append(
+          el("div", { class: "field-row", style: { marginTop: "0.5rem", alignItems: "end" } },
+            el("div", {},
+              el("label", {}, "Exercise"),
+              el("input", { type: "text", value: ex.exercise, list: "exercise-list", oninput: (e) => {
+                ex.exercise = e.target.value;
+                const match = exerciseLib.find((lib) => lib.name.toLowerCase() === e.target.value.toLowerCase());
+                if (match && !ex.muscleGroup) ex.muscleGroup = match.group;
+              } }),
+            ),
+            el("div", {},
+              el("label", {}, "Muscle group"),
+              el("div", { class: "row" },
+                el("select", { style: { flex: 1 }, onchange: (e) => (ex.muscleGroup = e.target.value) },
+                  el("option", { value: "" }, "— select —"),
+                  ...MUSCLE_GROUPS.map((g) => el("option", { value: g, selected: ex.muscleGroup === g ? "" : null }, g)),
+                ),
+                el("button", { class: "btn icon", title: "Remove", onclick: () => { day.exercises.splice(ei, 1); rerender(); } }, "×"),
+              ),
+            ),
+          ),
+        );
+      });
+      card.append(el("button", { class: "btn small", style: { marginTop: "0.6rem" }, onclick: () => { day.exercises.push({ exercise: "", muscleGroup: "" }); rerender(); } }, "+ Add exercise"));
+      wrap.append(card);
+    });
+
+    wrap.append(el("button", { class: "btn", style: { marginBottom: "1rem" }, onclick: () => { state.days.push({ name: "New Day", exercises: [] }); rerender(); } }, "+ Add day"));
+
+    const saveBtn = el("button", { class: "btn primary" }, "Save changes");
+    saveBtn.onclick = withLoading(saveBtn, async () => {
+      if (!state.name.trim()) return toast("Name is required", "bad");
+      const days = state.days.map((d) => ({
+        name: d.name || "Day",
+        exercises: d.exercises.filter((e) => e.exercise && e.muscleGroup),
+      }));
+      await run(data.updateMesocycleInfo(id, { name: state.name.trim(), startDate: state.startDate, weeks: String(state.weeks), notes: state.notes }), {});
+      await run(data.replaceTemplateDays(id, days), {});
+      await run(data.replaceTemplateExercises(id, days), {});
+      await run(data.recalculateWeekPlan(id, state.weeks, days), { ok: "Mesocycle updated" });
+      navigate(`#/meso/${id}`);
+    });
+    wrap.append(
+      el("div", { class: "row between", style: { marginTop: "1.5rem" } },
+        el("button", { class: "btn ghost", onclick: () => navigate(`#/meso/${id}`) }, "Cancel"),
+        saveBtn,
+      ),
+    );
+
+    return wrap;
+  }
+
+  rerender();
+
+  const existingDl = document.getElementById("exercise-list");
+  if (existingDl) existingDl.remove();
+  const dl = el("datalist", { id: "exercise-list" }, ...exerciseLib.map((x) => el("option", { value: x.name })));
+  document.body.append(dl);
 }

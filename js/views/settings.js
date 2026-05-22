@@ -1,4 +1,4 @@
-import { el, run, toast, withLoading } from "../ui.js";
+import { el, run, toast, withLoading, confirmModal } from "../ui.js";
 import { config, setClientId } from "../config.js";
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
@@ -61,12 +61,12 @@ export async function render(container) {
               el("button", {
                 class: "btn danger ghost",
                 onclick: () => {
-                  if (confirm("Forget this sheet? Data stays in your Google account but the app will need a new sheet.")) {
+                  confirmModal("Forget this sheet? Data stays in your Google account but the app will need a new sheet.", () => {
                     sheets.setSpreadsheetId("");
                     data.clearCaches();
                     location.hash = "#/settings";
                     location.reload();
-                  }
+                  });
                 },
               }, "Forget"),
             ),
@@ -213,10 +213,11 @@ export async function render(container) {
           ),
           el("button", {
             class: "btn small danger ghost",
-            onclick: async () => {
-              if (!confirm(`Delete "${c.name}"?`)) return;
-              await run(data.deleteCustomExercise(c.id), { ok: "Deleted" });
-              await renderCustomList();
+            onclick: () => {
+              confirmModal(`Delete "${c.name}"?`, async () => {
+                await run(data.deleteCustomExercise(c.id), { ok: "Deleted" });
+                await renderCustomList();
+              });
             },
           }, "×"),
         );
@@ -226,5 +227,42 @@ export async function render(container) {
 
     await renderCustomList();
     container.append(customExCard);
+
+    // Data export
+    const exportCard = el("section", { class: "card" },
+      el("h2", {}, "Data export"),
+      el("p", { class: "muted small" }, "Download all your data as a backup."),
+    );
+    const jsonBtn = el("button", { class: "btn" }, "Export JSON");
+    jsonBtn.onclick = withLoading(jsonBtn, async () => {
+      const d = await data.exportAllData();
+      const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "hkfit-export.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast("Downloaded", "ok");
+    });
+    const csvBtn = el("button", { class: "btn" }, "Export CSV");
+    csvBtn.onclick = withLoading(csvBtn, async () => {
+      const d = await data.exportAllData();
+      const parts = [];
+      for (const [tab, rows] of Object.entries(d)) {
+        if (!rows.length) continue;
+        const headers = Object.keys(rows[0]);
+        const lines = [headers.join(","), ...rows.map((r) => headers.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","))];
+        parts.push(`--- ${tab} ---\n${lines.join("\n")}`);
+      }
+      const blob = new Blob([parts.join("\n\n")], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "hkfit-export.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast("Downloaded", "ok");
+    });
+    exportCard.append(el("div", { class: "row" }, jsonBtn, csvBtn));
+    container.append(exportCard);
   }
 }

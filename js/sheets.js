@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { ensureToken } from "./auth.js";
 
 // Thin wrapper around the Google Sheets v4 REST API via gapi.client.
 // Persists a single spreadsheet ID in localStorage so the app finds the
@@ -94,6 +95,10 @@ const TABS = {
     title: "Cardio",
     headers: ["id", "date", "cardioType", "duration", "distance", "avgHeartRate", "perceivedDifficulty", "notes"],
   },
+  bodyWeight: {
+    title: "BodyWeight",
+    headers: ["id", "date", "weight", "unit", "notes"],
+  },
 };
 
 export function getSpreadsheetId() {
@@ -179,6 +184,7 @@ function tab(key) {
 
 // Read all rows of a tab as objects keyed by header name.
 export async function readAll(key) {
+  await ensureToken();
   const id = getSpreadsheetId();
   if (!id) return [];
   const t = tab(key);
@@ -199,6 +205,21 @@ export async function readAll(key) {
       });
   } catch (e) {
     if (e?.result?.error?.code === 400) return [];
+    if (e?.result?.error?.code === 401) {
+      await ensureToken();
+      const retry = await api().spreadsheets.values.get({
+        spreadsheetId: id,
+        range: `${t.title}`,
+      });
+      const rows2 = retry.result.values || [];
+      if (!rows2.length) return [];
+      const [h2, ...b2] = rows2;
+      return b2.filter((row) => row.length > 0).map((row) => {
+        const obj = {};
+        h2.forEach((h, i) => (obj[h] = row[i] ?? ""));
+        return obj;
+      });
+    }
     throw e;
   }
 }
@@ -213,6 +234,7 @@ function rowFromObject(key, obj) {
 }
 
 export async function appendRow(key, row) {
+  await ensureToken();
   const id = getSpreadsheetId();
   const t = tab(key);
   const values = Array.isArray(row) ? [row] : [rowFromObject(key, row)];
@@ -227,6 +249,7 @@ export async function appendRow(key, row) {
 
 export async function appendRows(key, rows) {
   if (!rows.length) return;
+  await ensureToken();
   const id = getSpreadsheetId();
   const t = tab(key);
   const values = rows.map((r) =>
@@ -243,6 +266,7 @@ export async function appendRows(key, rows) {
 
 // Overwrite a tab's contents (keeps header).
 export async function replaceAll(key, rows) {
+  await ensureToken();
   const id = getSpreadsheetId();
   const t = tab(key);
   // Clear everything below the header, then write fresh data.
@@ -264,6 +288,7 @@ export async function replaceAll(key, rows) {
 
 // Update or insert a single row matched by primary key column.
 export async function upsertRow(key, primaryKey, obj) {
+  await ensureToken();
   const all = await readAll(key);
   const headers = tab(key).headers;
   const idx = all.findIndex((r) => String(r[primaryKey]) === String(obj[primaryKey]));

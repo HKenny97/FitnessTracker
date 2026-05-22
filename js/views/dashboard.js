@@ -1,6 +1,14 @@
-import { el, fmtDate } from "../ui.js";
+import { el, fmtDate, isoToday, run, toast, withLoading } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
+import { drawChart, sparkline } from "../chart.js";
+
+function stat(value, label) {
+  return el("div", { class: "summary-stat" },
+    el("div", { class: "summary-stat-value" }, value),
+    el("div", { class: "summary-stat-label" }, label),
+  );
+}
 
 export async function render(container, { signedIn }) {
   if (!signedIn) {
@@ -20,12 +28,96 @@ export async function render(container, { signedIn }) {
     return;
   }
 
-  const [mesos, activeMeso] = await Promise.all([
+  // --- Load all data upfront ---
+  const [mesos, activeMeso, allSets, allSessions, cardioEntries, bodyWeights] = await Promise.all([
     data.listMesocycles(),
     data.getActiveMesocycle(),
+    data.listSets(),
+    data.listSessions(),
+    data.listCardio(),
+    data.listBodyWeights(),
   ]);
+  const today = isoToday();
 
-  // Active meso summary.
+  // --- Quick stats row ---
+  const thisMonth = today.slice(0, 7);
+  const monthSessions = new Set(allSessions.filter((s) => s.date.startsWith(thisMonth)).map((s) => s.date));
+  const monthSets = allSets.filter((s) => s.date.startsWith(thisMonth)).length;
+
+  // Streak: count consecutive days with workouts going backwards from today
+  const workoutDates = new Set([...allSessions.map((s) => s.date), ...allSets.map((s) => s.date)]);
+  let streak = 0;
+  let d = new Date();
+  while (true) {
+    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    if (workoutDates.has(iso)) { streak++; d.setDate(d.getDate() - 1); }
+    else break;
+  }
+
+  const latestBW = bodyWeights.length ? bodyWeights.sort((a, b) => b.date.localeCompare(a.date))[0] : null;
+
+  container.append(
+    el("div", { class: "summary-stats" },
+      stat(String(monthSessions.size), "Workouts this month"),
+      stat(String(monthSets), "Sets this month"),
+      stat(streak > 0 ? `${streak} day${streak !== 1 ? "s" : ""}` : "—", "Current streak"),
+      stat(latestBW ? `${latestBW.weight} ${latestBW.unit}` : "—", "Body weight"),
+    ),
+  );
+
+  // --- Quick actions row ---
+  container.append(
+    el("div", { class: "row", style: { gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" } },
+      el("a", { class: "btn primary", href: "#/workout" }, "Start Workout"),
+      el("a", { class: "btn", href: "#/cardio" }, "Log Cardio"),
+      el("button", { class: "btn", id: "bw-toggle" }, "Log Weight"),
+    ),
+  );
+
+  // --- Inline body weight form ---
+  const bwForm = el("div", { class: "bw-widget", style: { display: "none" } });
+  const bwState = { date: today, weight: "", unit: "lbs", notes: "" };
+  const bwSaveBtn = el("button", { class: "btn primary small" }, "Save");
+  bwSaveBtn.onclick = withLoading(bwSaveBtn, async () => {
+    if (!bwState.weight) return toast("Enter weight", "bad");
+    await run(data.logBodyWeight(bwState), { ok: "Weight logged" });
+    bwState.weight = ""; bwState.notes = "";
+    bwForm.style.display = "none";
+    // Refresh
+    location.hash = "#/";
+  });
+  bwForm.append(
+    el("div", { class: "field-row" },
+      el("div", { class: "field" },
+        el("label", {}, "Weight"),
+        el("input", { type: "number", inputmode: "decimal", step: "0.1", placeholder: "e.g. 175", oninput: (e) => (bwState.weight = e.target.value) }),
+      ),
+      el("div", { class: "field" },
+        el("label", {}, "Unit"),
+        el("select", { onchange: (e) => (bwState.unit = e.target.value) },
+          el("option", { value: "lbs" }, "lbs"),
+          el("option", { value: "kg" }, "kg"),
+        ),
+      ),
+      el("div", { class: "field" },
+        el("label", {}, "Date"),
+        el("input", { type: "date", value: bwState.date, oninput: (e) => (bwState.date = e.target.value) }),
+      ),
+    ),
+    el("div", { class: "field-row" },
+      el("div", { class: "field" },
+        el("label", {}, "Notes"),
+        el("input", { type: "text", placeholder: "Optional", oninput: (e) => (bwState.notes = e.target.value) }),
+      ),
+    ),
+    bwSaveBtn,
+  );
+  container.append(bwForm);
+  document.getElementById("bw-toggle").onclick = () => {
+    bwForm.style.display = bwForm.style.display === "none" ? "" : "none";
+  };
+
+  // --- Active meso summary ---
   if (activeMeso) {
     const start = new Date(activeMeso.startDate);
     const days = Math.floor((Date.now() - start.getTime()) / 86400000);
@@ -101,7 +193,71 @@ export async function render(container, { signedIn }) {
     );
   }
 
-  // All mesos list
+  // --- Body weight trend chart ---
+  if (bodyWeights.length > 1) {
+    const sorted = bodyWeights.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const pts = sorted.map((bw, i) => ({ x: i, y: +bw.weight }));
+    const labels = sorted.map((bw) => bw.date.slice(5));
+    const canvas = el("canvas", { style: { width: "100%", height: "200px" } });
+    container.append(
+      el("section", { class: "card" },
+        el("h3", {}, "Body weight trend"),
+        el("div", { class: "chart-container" }, canvas),
+      ),
+    );
+    requestAnimationFrame(() => drawChart(canvas, [{ label: "Weight", color: "#36c46b", points: pts }], { xLabels: labels, yLabel: bodyWeights[0].unit || "lbs" }));
+  }
+
+  // --- Recent PRs ---
+  const recentPRs = await data.getRecentPRs(5);
+  if (recentPRs.length) {
+    const prCard = el("section", { class: "card" },
+      el("h3", {}, "Recent PRs"),
+    );
+    for (const pr of recentPRs) {
+      prCard.append(
+        el("div", { class: "card-row", style: { padding: "0.3rem 0", borderBottom: "1px solid var(--line)" } },
+          el("div", {},
+            el("strong", {}, pr.exercise),
+            el("span", { class: "muted small", style: { marginLeft: "0.5rem" } }, `${pr.weight} × ${pr.reps}`),
+          ),
+          el("div", {},
+            el("span", { class: "pill pr-badge" }, pr.type === "weight" ? "Weight PR" : "e1RM PR"),
+            el("span", { class: "muted small", style: { marginLeft: "0.5rem" } }, fmtDate(pr.date)),
+          ),
+        ),
+      );
+    }
+    container.append(prCard);
+  }
+
+  // --- Workout frequency chart (last 8 weeks) ---
+  const now = new Date();
+  const freqData = [];
+  const freqLabels = [];
+  for (let i = 7; i >= 0; i--) {
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - (i * 7 + weekStart.getDay()));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const startIso = weekStart.toISOString().slice(0, 10);
+    const endIso = weekEnd.toISOString().slice(0, 10);
+    const count = new Set(allSessions.filter((s) => s.date >= startIso && s.date <= endIso).map((s) => s.date)).size;
+    freqData.push({ x: 7 - i, y: count });
+    freqLabels.push(startIso.slice(5));
+  }
+  if (freqData.some((p) => p.y > 0)) {
+    const canvas = el("canvas", { style: { width: "100%", height: "180px" } });
+    container.append(
+      el("section", { class: "card" },
+        el("h3", {}, "Workout frequency"),
+        el("div", { class: "chart-container" }, canvas),
+      ),
+    );
+    requestAnimationFrame(() => drawChart(canvas, [{ label: "Workouts", color: "#ff5a1f", points: freqData }], { type: "bar", xLabels: freqLabels, yLabel: "days" }));
+  }
+
+  // --- All mesos list ---
   container.append(
     el("div", { class: "section-title" },
       el("h2", {}, "Mesocycles"),

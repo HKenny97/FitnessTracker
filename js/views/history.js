@@ -1,6 +1,8 @@
-import { el, fmtDate, isoToday } from "../ui.js";
+import { el, fmtDate, isoToday, confirmModal, withLoading, run, toast } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
+import { drawChart } from "../chart.js";
+import { epley1RM } from "../rp.js";
 
 export async function render(container) {
   const [sessions, sets, allMesos, cardioEntries] = await Promise.all([
@@ -16,6 +18,10 @@ export async function render(container) {
   let viewMode = "list";
   let calMonth = new Date().getMonth();
   let calYear = new Date().getFullYear();
+  const expandedDates = new Set();
+  let searchText = "";
+  let filterGroup = "";
+  let editingSetId = null;
 
   const root = el("div", {});
   container.append(root);
@@ -34,48 +40,226 @@ export async function render(container) {
             class: "btn small" + (viewMode === "calendar" ? " primary" : ""),
             onclick: () => { viewMode = "calendar"; rerender(); },
           }, "Calendar"),
+          el("button", {
+            class: "btn small" + (viewMode === "charts" ? " primary" : ""),
+            onclick: () => { viewMode = "charts"; rerender(); },
+          }, "Charts"),
         ),
       ),
     );
 
     if (viewMode === "list") renderList();
-    else renderCalendar();
+    else if (viewMode === "calendar") renderCalendar();
+    else if (viewMode === "charts") renderCharts();
   }
+
+  // -- Helpers for comparisons --
+
+  function findPreviousTopSet(exercise, beforeDate) {
+    const candidates = sets
+      .filter((s) => s.exercise === exercise && s.date < beforeDate)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (!candidates.length) return null;
+    const lastDate = candidates[0].date;
+    const session = candidates.filter((s) => s.date === lastDate);
+    return session.reduce((b, s) => (+s.weight > +b.weight ? s : b), session[0]);
+  }
+
+  function deltaEl(topSet, prevTop) {
+    const wD = +topSet.weight - +prevTop.weight;
+    const rD = +topSet.reps - +prevTop.reps;
+    let text, cls;
+    if (wD > 0) { text = `+${wD}`; cls = "delta-up"; }
+    else if (wD < 0) { text = `${wD}`; cls = "delta-down"; }
+    else if (rD > 0) { text = `+${rD} reps`; cls = "delta-up"; }
+    else if (rD < 0) { text = `${rD} reps`; cls = "delta-down"; }
+    else { text = "="; cls = "delta-same"; }
+    return el("span", { class: `delta ${cls}` }, text);
+  }
+
+  // -- Expanded detail for a date --
+
+  function buildDateDetail(dateSets, date, dateSessions) {
+    const detail = el("div", { class: "history-detail" });
+
+    const exerciseOrder = [];
+    const byExercise = new Map();
+    for (const s of dateSets) {
+      if (!byExercise.has(s.exercise)) {
+        byExercise.set(s.exercise, []);
+        exerciseOrder.push(s.exercise);
+      }
+      byExercise.get(s.exercise).push(s);
+    }
+
+    for (const exercise of exerciseOrder) {
+      const exSets = byExercise.get(exercise).sort((a, b) => +a.setNumber - +b.setNumber);
+      const topSet = exSets.reduce((b, s) => (+s.weight > +b.weight ? s : b), exSets[0]);
+      const prev = findPreviousTopSet(exercise, date);
+
+      const exBlock = el("div", { class: "exercise-detail" });
+
+      let comp = prev
+        ? deltaEl(topSet, prev)
+        : el("span", { class: "delta delta-new" }, "New");
+
+      // PR highlighting
+      const allPriorForEx = sets.filter((s) => s.exercise === exercise && s.date < date);
+      const isPR = allPriorForEx.length > 0 && +topSet.weight > Math.max(...allPriorForEx.map((s) => +s.weight));
+      if (isPR) comp = el("span", {}, comp, el("span", { class: "pill pr-badge" }, "PR"));
+
+      exBlock.append(
+        el("div", { class: "exercise-detail-head" },
+          el("div", {},
+            el("strong", {}, exercise),
+            el("span", { class: "pill small", style: { marginLeft: "0.5rem" } }, exSets[0].muscleGroup),
+          ),
+          comp,
+        ),
+      );
+
+      for (const s of exSets) {
+        if (editingSetId === s.id) {
+          const ed = { weight: s.weight, reps: s.reps, rir: s.rir };
+          const saveBtn = el("button", { class: "btn small primary" }, "Save");
+          const cancelBtn = el("button", { class: "btn small" }, "Cancel");
+          cancelBtn.onclick = () => { editingSetId = null; rerender(); };
+          saveBtn.onclick = withLoading(saveBtn, async () => {
+            await run(data.updateSet(s.id, { weight: ed.weight, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
+            Object.assign(s, ed);
+            editingSetId = null;
+            rerender();
+          });
+          exBlock.append(
+            el("div", { class: "set-detail editing" },
+              el("input", { type: "number", inputmode: "decimal", step: "0.5", value: ed.weight, style: { width: "70px" }, oninput: (e) => (ed.weight = e.target.value) }),
+              el("input", { type: "number", inputmode: "numeric", value: ed.reps, style: { width: "60px" }, oninput: (e) => (ed.reps = e.target.value) }),
+              el("input", { type: "number", inputmode: "numeric", value: ed.rir, style: { width: "60px" }, oninput: (e) => (ed.rir = e.target.value) }),
+              el("div", { class: "set-actions" }, saveBtn, cancelBtn),
+            ),
+          );
+        } else {
+          exBlock.append(
+            el("div", { class: "set-detail" },
+              el("span", { class: "muted" }, `${s.setNumber}`),
+              el("span", {}, `${s.weight} × ${s.reps}`),
+              el("span", { class: "muted" }, `${s.rir} RIR`),
+              el("div", { class: "set-actions" },
+                el("button", { class: "btn small ghost", onclick: () => { editingSetId = s.id; rerender(); } }, "✏"),
+                el("button", { class: "btn small danger ghost", onclick: () => {
+                  confirmModal("Delete this set?", async () => {
+                    await run(data.deleteSet(s.id), { ok: "Deleted" });
+                    const idx = sets.indexOf(s);
+                    if (idx >= 0) sets.splice(idx, 1);
+                    rerender();
+                  });
+                } }, "×"),
+              ),
+            ),
+          );
+        }
+      }
+
+      if (prev) {
+        exBlock.append(
+          el("div", { class: "muted small", style: { marginTop: "0.2rem" } },
+            `Top: ${topSet.weight} × ${topSet.reps}  (prev ${prev.weight} × ${prev.reps})`),
+        );
+      }
+
+      detail.append(exBlock);
+    }
+
+    const vol = dateSets.reduce((sum, s) => sum + (+s.weight * +s.reps), 0);
+    detail.append(
+      el("div", { class: "volume-summary" },
+        el("span", { class: "muted" }, "Total volume: "),
+        el("strong", {}, `${vol.toLocaleString()} lbs`),
+      ),
+    );
+
+    // Session delete button
+    const sess = dateSessions ? dateSessions[0] : null;
+    if (sess) {
+      const delBtn = el("button", { class: "btn small danger ghost", style: { marginTop: "0.5rem" } }, "Delete session");
+      delBtn.onclick = () => {
+        confirmModal("Delete this workout and all its sets?", async () => {
+          await run(data.deleteSession(sess.id), { ok: "Session deleted" });
+          // Remove from local arrays
+          const sIdx = sessions.findIndex((s) => s.id === sess.id);
+          if (sIdx >= 0) sessions.splice(sIdx, 1);
+          const toRemove = sets.filter((s) => s.date === sess.date && s.mesoId === sess.mesoId);
+          for (const s of toRemove) { const i = sets.indexOf(s); if (i >= 0) sets.splice(i, 1); }
+          rerender();
+        });
+      };
+      detail.append(delBtn);
+    }
+
+    return detail;
+  }
+
+  // -- List view --
 
   function renderList() {
     const byDate = new Map();
     for (const s of sets) {
-      const key = s.date;
-      if (!byDate.has(key)) byDate.set(key, []);
-      byDate.get(key).push(s);
+      if (!byDate.has(s.date)) byDate.set(s.date, []);
+      byDate.get(s.date).push(s);
     }
 
     const sessionByDate = new Map();
     for (const s of sessions) {
-      const key = s.date;
-      if (!sessionByDate.has(key)) sessionByDate.set(key, []);
-      sessionByDate.get(key).push(s);
+      if (!sessionByDate.has(s.date)) sessionByDate.set(s.date, []);
+      sessionByDate.get(s.date).push(s);
     }
 
     const cardioByDate = new Map();
     for (const c of cardioEntries) {
-      const key = c.date;
-      if (!cardioByDate.has(key)) cardioByDate.set(key, []);
-      cardioByDate.get(key).push(c);
+      if (!cardioByDate.has(c.date)) cardioByDate.set(c.date, []);
+      cardioByDate.get(c.date).push(c);
     }
 
     const allDates = [...new Set([...byDate.keys(), ...sessionByDate.keys(), ...cardioByDate.keys()])]
       .sort((a, b) => b.localeCompare(a));
 
-    if (!allDates.length) {
-      root.append(el("p", { class: "muted" }, "No workouts logged yet."));
+    // Filter bar
+    const allGroups = [...new Set(sets.map((s) => s.muscleGroup))].sort();
+    root.append(
+      el("div", { class: "history-filters" },
+        el("input", { type: "text", placeholder: "Search exercises…", value: searchText,
+          oninput: (e) => { searchText = e.target.value; rerender(); } }),
+        el("select", { onchange: (e) => { filterGroup = e.target.value; rerender(); } },
+          el("option", { value: "" }, "All muscles"),
+          ...allGroups.map((g) => el("option", { value: g, selected: filterGroup === g ? "" : null }, g)),
+        ),
+      ),
+    );
+
+    // Apply search/filter
+    const filteredDates = allDates.filter((date) => {
+      const dateSets = byDate.get(date) || [];
+      if (searchText) {
+        const q = searchText.toLowerCase();
+        if (!dateSets.some((s) => s.exercise.toLowerCase().includes(q))) return false;
+      }
+      if (filterGroup) {
+        if (!dateSets.some((s) => s.muscleGroup === filterGroup)) return false;
+      }
+      return true;
+    });
+
+    if (!filteredDates.length) {
+      root.append(el("p", { class: "muted" }, searchText || filterGroup ? "No matching workouts." : "No workouts logged yet."));
       return;
     }
 
-    for (const date of allDates) {
+    for (const date of filteredDates) {
       const dateSets = byDate.get(date) || [];
       const dateSessions = sessionByDate.get(date) || [];
       const dateCardio = cardioByDate.get(date) || [];
+      const isExpanded = expandedDates.has(date);
+      const expandable = dateSets.length > 0;
 
       const muscleMap = {};
       for (const s of dateSets) {
@@ -85,14 +269,26 @@ export async function render(container) {
         .sort((a, b) => b[1] - a[1])
         .map(([g, n]) => `${g} (${n})`);
 
-      const card = el("div", { class: "card history-card" });
+      const card = el("div", { class: "card history-card" + (isExpanded ? " expanded" : "") });
+
+      // -- Header (clickable) --
+
+      const header = el("div", { class: "history-card-header" });
+      if (expandable) {
+        header.style.cursor = "pointer";
+        header.onclick = () => {
+          if (expandedDates.has(date)) expandedDates.delete(date);
+          else expandedDates.add(date);
+          rerender();
+        };
+      }
 
       const meta = dateSessions[0];
       const timeStr = meta?.startTime && meta?.endTime
         ? `${meta.startTime} – ${meta.endTime}`
         : meta?.startTime ? `Started ${meta.startTime}` : "";
 
-      card.append(
+      header.append(
         el("div", { class: "card-row" },
           el("div", {},
             el("strong", {}, fmtDate(date)),
@@ -102,6 +298,7 @@ export async function render(container) {
             dateSets.length && el("span", { class: "pill" }, `${dateSets.length} sets`),
             meta?.totalRPE && el("span", { class: "pill" }, `RPE ${meta.totalRPE}`),
             meta?.leafStatus === "Yes" && el("span", { class: "pill leaf" }, "Leaf"),
+            expandable && el("span", { class: "chevron" }, isExpanded ? "▾" : "▸"),
           ),
         ),
       );
@@ -118,11 +315,11 @@ export async function render(container) {
         if (meso) infoParts.push(`${meso.name} · W${dateSets[0].week}`);
       }
       if (infoParts.length) {
-        card.append(el("div", { class: "muted small", style: { marginTop: "0.25rem" } }, infoParts.join(" · ")));
+        header.append(el("div", { class: "muted small", style: { marginTop: "0.25rem" } }, infoParts.join(" · ")));
       }
 
       if (muscles.length) {
-        card.append(
+        header.append(
           el("div", { class: "history-muscles" },
             ...muscles.map((m) => el("span", { class: "pill small" }, m)),
           ),
@@ -134,7 +331,7 @@ export async function render(container) {
         if (c.duration) parts.push(`${c.duration} min`);
         if (c.distance) parts.push(`${c.distance} km`);
         if (c.avgHeartRate) parts.push(`${c.avgHeartRate} bpm`);
-        card.append(
+        header.append(
           el("div", { class: "history-muscles", style: { marginTop: "0.35rem" } },
             el("span", { class: "pill small cardio-pill" }, "Cardio"),
             el("span", { class: "muted small" }, parts.join(" · ")),
@@ -143,12 +340,22 @@ export async function render(container) {
       }
 
       if (meta?.notes) {
-        card.append(el("div", { class: "muted small", style: { marginTop: "0.4rem", fontStyle: "italic" } }, meta.notes));
+        header.append(el("div", { class: "muted small", style: { marginTop: "0.4rem", fontStyle: "italic" } }, meta.notes));
+      }
+
+      card.append(header);
+
+      // -- Expanded detail --
+
+      if (isExpanded && dateSets.length) {
+        card.append(buildDateDetail(dateSets, date, dateSessions));
       }
 
       root.append(card);
     }
   }
+
+  // -- Calendar view --
 
   function renderCalendar() {
     const activeDates = new Set();
@@ -162,10 +369,10 @@ export async function render(container) {
     const setCountByDate = {};
     for (const s of sets) setCountByDate[s.date] = (setCountByDate[s.date] || 0) + 1;
 
-    const cardioByDate = {};
+    const cardioByDateCal = {};
     for (const c of cardioEntries) {
-      if (!cardioByDate[c.date]) cardioByDate[c.date] = [];
-      cardioByDate[c.date].push(c);
+      if (!cardioByDateCal[c.date]) cardioByDateCal[c.date] = [];
+      cardioByDateCal[c.date].push(c);
     }
 
     const monthNames = ["January", "February", "March", "April", "May", "June",
@@ -207,7 +414,7 @@ export async function render(container) {
       const isToday = iso === today;
       const session = sessionByDate[iso];
       const setCount = setCountByDate[iso] || 0;
-      const cardio = cardioByDate[iso];
+      const cardio = cardioByDateCal[iso];
 
       const classes = ["cal-cell"];
       if (hasWorkout) classes.push("has-workout");
@@ -254,6 +461,66 @@ export async function render(container) {
         ),
       ),
     );
+  }
+
+  // -- Charts view --
+
+  function renderCharts() {
+    const exerciseNames = [...new Set(sets.map((s) => s.exercise))].sort();
+    let selectedExercise = exerciseNames[0] || "";
+
+    function renderChartsInner() {
+      // Remove previous charts content (keep the filter bar from rerender)
+      const existing = root.querySelector(".charts-content");
+      if (existing) existing.remove();
+
+      const content = el("div", { class: "charts-content" });
+
+      content.append(
+        el("div", { class: "field", style: { marginBottom: "1rem" } },
+          el("label", {}, "Exercise"),
+          el("select", { onchange: (e) => { selectedExercise = e.target.value; renderChartsInner(); } },
+            ...exerciseNames.map((n) => el("option", { value: n, selected: n === selectedExercise ? "" : null }, n)),
+          ),
+        ),
+      );
+
+      if (selectedExercise) {
+        const exSets = sets.filter((s) => s.exercise === selectedExercise).sort((a, b) => a.date.localeCompare(b.date));
+        // Get top set per date
+        const byDate = new Map();
+        for (const s of exSets) {
+          const existing = byDate.get(s.date);
+          if (!existing || +s.weight > +existing.weight) byDate.set(s.date, s);
+        }
+        const dates = [...byDate.keys()];
+        const points = dates.map((d, i) => ({ x: i, y: +byDate.get(d).weight }));
+        const labels = dates.map((d) => d.slice(5)); // MM-DD
+
+        if (points.length > 1) {
+          content.append(el("h3", {}, "Weight progression"));
+          const canvas = el("canvas", { style: { width: "100%", height: "220px" } });
+          content.append(el("div", { class: "chart-container" }, canvas));
+          requestAnimationFrame(() => drawChart(canvas, [{ label: selectedExercise, points }], { xLabels: labels, yLabel: "lbs" }));
+
+          // e1RM chart
+          const e1rmPoints = dates.map((d, i) => {
+            const s = byDate.get(d);
+            return { x: i, y: Math.round(epley1RM(+s.weight, +s.reps) * 10) / 10 };
+          });
+          content.append(el("h3", { style: { marginTop: "1rem" } }, "Estimated 1RM"));
+          const canvas2 = el("canvas", { style: { width: "100%", height: "220px" } });
+          content.append(el("div", { class: "chart-container" }, canvas2));
+          requestAnimationFrame(() => drawChart(canvas2, [{ label: "e1RM", color: "#ffb547", points: e1rmPoints }], { xLabels: labels, yLabel: "lbs" }));
+        } else {
+          content.append(el("p", { class: "muted" }, "Need more sessions to show charts."));
+        }
+      }
+
+      root.append(content);
+    }
+
+    renderChartsInner();
   }
 
   rerender();

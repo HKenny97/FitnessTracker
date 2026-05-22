@@ -161,6 +161,25 @@ export function didSilentRestoreFail() {
   return v;
 }
 
+export async function ensureToken() {
+  if (accessToken && Date.now() < tokenExpiresAt - 60000) return;
+  if (!tokenClient || !accessToken) return;
+  await new Promise((resolve, reject) => {
+    const prev = tokenClient.callback;
+    tokenClient.callback = (resp) => {
+      tokenClient.callback = prev;
+      if (resp.error) { reject(new Error(resp.error)); return; }
+      accessToken = resp.access_token;
+      tokenExpiresAt = Date.now() + (resp.expires_in - 60) * 1000;
+      window.gapi.client.setToken({ access_token: accessToken });
+      cacheToken();
+      notify();
+      resolve();
+    };
+    tokenClient.requestAccessToken({ prompt: "", login_hint: userEmail || "" });
+  });
+}
+
 export function signIn() {
   if (!tokenClient) {
     alert(

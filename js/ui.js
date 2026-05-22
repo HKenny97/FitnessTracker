@@ -65,8 +65,29 @@ export function withLoading(btn, asyncFn) {
   return async () => {
     if (btn.disabled) return;
     btn.disabled = true;
-    try { await asyncFn(); } finally { btn.disabled = false; }
+    btn.classList.add("loading");
+    try { await asyncFn(); } finally { btn.disabled = false; btn.classList.remove("loading"); }
   };
+}
+
+export function confirmModal(message, onConfirm) {
+  const overlay = el("div", { class: "modal-overlay" });
+  const cancel = el("button", { class: "btn small" }, "Cancel");
+  const confirm = el("button", { class: "btn small danger" }, "Delete");
+  cancel.onclick = () => overlay.remove();
+  confirm.onclick = async () => {
+    confirm.disabled = true;
+    confirm.classList.add("loading");
+    try { await onConfirm(); } finally { overlay.remove(); }
+  };
+  overlay.append(
+    el("div", { class: "modal-card" },
+      el("p", {}, message),
+      el("div", { class: "btn-row" }, cancel, confirm),
+    ),
+  );
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.append(overlay);
 }
 
 export function defaultSessionState() {

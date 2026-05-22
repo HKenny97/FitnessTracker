@@ -49,7 +49,7 @@ export const DEFAULT_LANDMARKS = {
 // Comprehensive exercise library for hypertrophy training.
 // Each entry: { name, group (primary muscle group), equipment }.
 export const EXERCISE_LIBRARY = [
-  // ── Chest (15) ─────────────────────────────────────────────
+  // ── Chest ──────────────────────────────────────────────────
   { name: "Barbell Bench Press", group: "Chest", equipment: "barbell" },
   { name: "Incline Barbell Bench Press", group: "Chest", equipment: "barbell" },
   { name: "Decline Barbell Bench Press", group: "Chest", equipment: "barbell" },
@@ -69,8 +69,17 @@ export const EXERCISE_LIBRARY = [
   { name: "Incline Dumbbell Fly", group: "Chest", equipment: "dumbbell" },
   { name: "Machine Incline Press", group: "Chest", equipment: "machine" },
   { name: "Svend Press", group: "Chest", equipment: "barbell" },
+  { name: "Cable Crossover", group: "Chest", equipment: "cable" },
+  { name: "Single-Arm Cable Fly", group: "Chest", equipment: "cable" },
+  { name: "Standing Cable Chest Press", group: "Chest", equipment: "cable" },
+  { name: "Incline Cable Fly", group: "Chest", equipment: "cable" },
+  { name: "HS Iso-Lateral Bench Press", group: "Chest", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Incline Press", group: "Chest", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Decline Press", group: "Chest", equipment: "hammer strength" },
+  { name: "HS Wide Chest Press", group: "Chest", equipment: "hammer strength" },
+  { name: "HS Seated Chest Press", group: "Chest", equipment: "hammer strength" },
 
-  // ── Back (15+) ──────────────────────────────────────────────
+  // ── Back ───────────────────────────────────────────────────
   { name: "Pull-Up", group: "Back", equipment: "bodyweight" },
   { name: "Chin-Up", group: "Back", equipment: "bodyweight" },
   { name: "Lat Pulldown", group: "Back", equipment: "cable" },
@@ -90,8 +99,23 @@ export const EXERCISE_LIBRARY = [
   { name: "Single-Arm Lat Pulldown", group: "Back", equipment: "cable" },
   { name: "Neutral-Grip Lat Pulldown", group: "Back", equipment: "cable" },
   { name: "Seal Row", group: "Back", equipment: "barbell" },
+  { name: "Cable Pullover", group: "Back", equipment: "cable" },
+  { name: "V-Bar Cable Row", group: "Back", equipment: "cable" },
+  { name: "Wide-Grip Cable Row", group: "Back", equipment: "cable" },
+  { name: "Single-Arm Cable Row", group: "Back", equipment: "cable" },
+  { name: "Kneeling Cable Pullover", group: "Back", equipment: "cable" },
+  { name: "Behind-the-Neck Lat Pulldown", group: "Back", equipment: "cable" },
+  { name: "Reverse-Grip Lat Pulldown", group: "Back", equipment: "cable" },
+  { name: "HS Iso-Lateral Row", group: "Back", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral High Row", group: "Back", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Low Row", group: "Back", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Front Lat Pulldown", group: "Back", equipment: "hammer strength" },
+  { name: "HS DY Row", group: "Back", equipment: "hammer strength" },
+  { name: "HS Seated Row", group: "Back", equipment: "hammer strength" },
+  { name: "HS Lat Pulldown", group: "Back", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Seated Row", group: "Back", equipment: "hammer strength" },
 
-  // ── Quads (15+) ─────────────────────────────────────────────
+  // ── Quads ──────────────────────────────────────────────────
   { name: "Back Squat", group: "Quads", equipment: "barbell" },
   { name: "Front Squat", group: "Quads", equipment: "barbell" },
   { name: "Hack Squat", group: "Quads", equipment: "machine" },
@@ -107,8 +131,15 @@ export const EXERCISE_LIBRARY = [
   { name: "Belt Squat", group: "Quads", equipment: "machine" },
   { name: "Pendulum Squat", group: "Quads", equipment: "machine" },
   { name: "V-Squat", group: "Quads", equipment: "machine" },
+  { name: "Cable Squat", group: "Quads", equipment: "cable" },
+  { name: "Cable Leg Extension", group: "Quads", equipment: "cable" },
+  { name: "HS Leg Press", group: "Quads", equipment: "hammer strength" },
+  { name: "HS Linear Leg Press", group: "Quads", equipment: "hammer strength" },
+  { name: "HS Leg Extension", group: "Quads", equipment: "hammer strength" },
+  { name: "HS V-Squat", group: "Quads", equipment: "hammer strength" },
+  { name: "HS Squat Lunge", group: "Quads", equipment: "hammer strength" },
 
-  // ── Hamstrings (12) ────────────────────────────────────────
+  // ── Hamstrings ─────────────────────────────────────────────
   { name: "Romanian Deadlift", group: "Hamstrings", equipment: "barbell" },
   { name: "Dumbbell Romanian Deadlift", group: "Hamstrings", equipment: "dumbbell" },
   { name: "Stiff-Leg Deadlift", group: "Hamstrings", equipment: "barbell" },
@@ -123,8 +154,13 @@ export const EXERCISE_LIBRARY = [
   { name: "Kettlebell Swing", group: "Hamstrings", equipment: "kettlebell" },
   { name: "Dumbbell Good Morning", group: "Hamstrings", equipment: "dumbbell" },
   { name: "Band Leg Curl", group: "Hamstrings", equipment: "band" },
+  { name: "Cable Leg Curl", group: "Hamstrings", equipment: "cable" },
+  { name: "Cable Romanian Deadlift", group: "Hamstrings", equipment: "cable" },
+  { name: "HS Lying Leg Curl", group: "Hamstrings", equipment: "hammer strength" },
+  { name: "HS Seated Leg Curl", group: "Hamstrings", equipment: "hammer strength" },
+  { name: "HS Kneeling Leg Curl", group: "Hamstrings", equipment: "hammer strength" },
 
-  // ── Glutes (12) ────────────────────────────────────────────
+  // ── Glutes ─────────────────────────────────────────────────
   { name: "Hip Thrust", group: "Glutes", equipment: "barbell" },
   { name: "Smith Machine Hip Thrust", group: "Glutes", equipment: "smith machine" },
   { name: "Dumbbell Hip Thrust", group: "Glutes", equipment: "dumbbell" },
@@ -137,8 +173,12 @@ export const EXERCISE_LIBRARY = [
   { name: "Sumo Deadlift", group: "Glutes", equipment: "barbell" },
   { name: "Reverse Lunge", group: "Glutes", equipment: "dumbbell" },
   { name: "Band Hip Thrust", group: "Glutes", equipment: "band" },
+  { name: "Cable Hip Extension", group: "Glutes", equipment: "cable" },
+  { name: "Cable Donkey Kick", group: "Glutes", equipment: "cable" },
+  { name: "HS Glute Kickback", group: "Glutes", equipment: "hammer strength" },
+  { name: "HS Hip Thrust", group: "Glutes", equipment: "hammer strength" },
 
-  // ── Shoulders (side delts) (12) ────────────────────────────
+  // ── Shoulders (side delts) ──────────────────────────────────
   { name: "Dumbbell Lateral Raise", group: "Shoulders (side delts)", equipment: "dumbbell" },
   { name: "Cable Lateral Raise", group: "Shoulders (side delts)", equipment: "cable" },
   { name: "Machine Lateral Raise", group: "Shoulders (side delts)", equipment: "machine" },
@@ -151,8 +191,11 @@ export const EXERCISE_LIBRARY = [
   { name: "Lu Raise", group: "Shoulders (side delts)", equipment: "dumbbell" },
   { name: "Kettlebell Lateral Raise", group: "Shoulders (side delts)", equipment: "kettlebell" },
   { name: "Incline Dumbbell Y-Raise", group: "Shoulders (side delts)", equipment: "dumbbell" },
+  { name: "Cross-Body Cable Lateral Raise", group: "Shoulders (side delts)", equipment: "cable" },
+  { name: "Cable W-Raise", group: "Shoulders (side delts)", equipment: "cable" },
+  { name: "HS Lateral Raise", group: "Shoulders (side delts)", equipment: "hammer strength" },
 
-  // ── Shoulders (rear delts) (10) ────────────────────────────
+  // ── Shoulders (rear delts) ──────────────────────────────────
   { name: "Reverse Pec Deck", group: "Shoulders (rear delts)", equipment: "machine" },
   { name: "Face Pull", group: "Shoulders (rear delts)", equipment: "cable" },
   { name: "Dumbbell Reverse Fly", group: "Shoulders (rear delts)", equipment: "dumbbell" },
@@ -163,8 +206,11 @@ export const EXERCISE_LIBRARY = [
   { name: "Machine Reverse Fly", group: "Shoulders (rear delts)", equipment: "machine" },
   { name: "Wide-Grip Cable Row (Rear Delt)", group: "Shoulders (rear delts)", equipment: "cable" },
   { name: "Rear Delt Cable Pull", group: "Shoulders (rear delts)", equipment: "cable" },
+  { name: "Single-Arm Cable Reverse Fly", group: "Shoulders (rear delts)", equipment: "cable" },
+  { name: "Kneeling Cable Face Pull", group: "Shoulders (rear delts)", equipment: "cable" },
+  { name: "High Cable Reverse Fly", group: "Shoulders (rear delts)", equipment: "cable" },
 
-  // ── Shoulders (front delts) (10) ───────────────────────────
+  // ── Shoulders (front delts) ─────────────────────────────────
   { name: "Overhead Press", group: "Shoulders (front delts)", equipment: "barbell" },
   { name: "Dumbbell Shoulder Press", group: "Shoulders (front delts)", equipment: "dumbbell" },
   { name: "Arnold Press", group: "Shoulders (front delts)", equipment: "dumbbell" },
@@ -175,8 +221,13 @@ export const EXERCISE_LIBRARY = [
   { name: "Cable Front Raise", group: "Shoulders (front delts)", equipment: "cable" },
   { name: "Plate Front Raise", group: "Shoulders (front delts)", equipment: "barbell" },
   { name: "Landmine Press", group: "Shoulders (front delts)", equipment: "barbell" },
+  { name: "Cable Shoulder Press", group: "Shoulders (front delts)", equipment: "cable" },
+  { name: "Single-Arm Cable Front Raise", group: "Shoulders (front delts)", equipment: "cable" },
+  { name: "HS Shoulder Press", group: "Shoulders (front delts)", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Shoulder Press", group: "Shoulders (front delts)", equipment: "hammer strength" },
+  { name: "HS Military Press", group: "Shoulders (front delts)", equipment: "hammer strength" },
 
-  // ── Biceps (14) ────────────────────────────────────────────
+  // ── Biceps ─────────────────────────────────────────────────
   { name: "Barbell Curl", group: "Biceps", equipment: "barbell" },
   { name: "EZ-Bar Curl", group: "Biceps", equipment: "barbell" },
   { name: "Dumbbell Curl", group: "Biceps", equipment: "dumbbell" },
@@ -191,8 +242,17 @@ export const EXERCISE_LIBRARY = [
   { name: "Spider Curl", group: "Biceps", equipment: "dumbbell" },
   { name: "Bayesian Cable Curl", group: "Biceps", equipment: "cable" },
   { name: "Barbell Drag Curl", group: "Biceps", equipment: "barbell" },
+  { name: "High Cable Curl", group: "Biceps", equipment: "cable" },
+  { name: "Overhead Cable Curl", group: "Biceps", equipment: "cable" },
+  { name: "Single-Arm Cable Curl", group: "Biceps", equipment: "cable" },
+  { name: "Cable Preacher Curl", group: "Biceps", equipment: "cable" },
+  { name: "Cable Concentration Curl", group: "Biceps", equipment: "cable" },
+  { name: "Low Cable Curl (EZ-Bar)", group: "Biceps", equipment: "cable" },
+  { name: "HS Preacher Curl", group: "Biceps", equipment: "hammer strength" },
+  { name: "HS Bicep Curl", group: "Biceps", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Preacher Curl", group: "Biceps", equipment: "hammer strength" },
 
-  // ── Triceps (14) ───────────────────────────────────────────
+  // ── Triceps ────────────────────────────────────────────────
   { name: "Triceps Pushdown", group: "Triceps", equipment: "cable" },
   { name: "Triceps Rope Pushdown", group: "Triceps", equipment: "cable" },
   { name: "Overhead Cable Triceps Extension", group: "Triceps", equipment: "cable" },
@@ -207,8 +267,16 @@ export const EXERCISE_LIBRARY = [
   { name: "Cable Kickback", group: "Triceps", equipment: "cable" },
   { name: "JM Press", group: "Triceps", equipment: "barbell" },
   { name: "Single-Arm Cable Pushdown", group: "Triceps", equipment: "cable" },
+  { name: "Reverse-Grip Cable Pushdown", group: "Triceps", equipment: "cable" },
+  { name: "Cable Cross-Body Pushdown", group: "Triceps", equipment: "cable" },
+  { name: "Single-Arm Overhead Cable Extension", group: "Triceps", equipment: "cable" },
+  { name: "Cable V-Bar Pushdown", group: "Triceps", equipment: "cable" },
+  { name: "Cable Skull Crusher", group: "Triceps", equipment: "cable" },
+  { name: "HS Tricep Extension", group: "Triceps", equipment: "hammer strength" },
+  { name: "HS Dip", group: "Triceps", equipment: "hammer strength" },
+  { name: "HS Iso-Lateral Tricep Extension", group: "Triceps", equipment: "hammer strength" },
 
-  // ── Calves (8) ─────────────────────────────────────────────
+  // ── Calves ─────────────────────────────────────────────────
   { name: "Standing Calf Raise", group: "Calves", equipment: "machine" },
   { name: "Seated Calf Raise", group: "Calves", equipment: "machine" },
   { name: "Leg Press Calf Raise", group: "Calves", equipment: "machine" },
@@ -219,8 +287,10 @@ export const EXERCISE_LIBRARY = [
   { name: "Donkey Calf Raise", group: "Calves", equipment: "machine" },
   { name: "Tibialis Raise", group: "Calves", equipment: "bodyweight" },
   { name: "Cable Calf Raise", group: "Calves", equipment: "cable" },
+  { name: "HS Standing Calf Raise", group: "Calves", equipment: "hammer strength" },
+  { name: "HS Seated Calf Raise", group: "Calves", equipment: "hammer strength" },
 
-  // ── Forearms (8+) ───────────────────────────────────────────
+  // ── Forearms ───────────────────────────────────────────────
   { name: "Wrist Curl", group: "Forearms", equipment: "barbell" },
   { name: "Dumbbell Wrist Curl", group: "Forearms", equipment: "dumbbell" },
   { name: "Reverse Wrist Curl", group: "Forearms", equipment: "barbell" },
@@ -231,8 +301,10 @@ export const EXERCISE_LIBRARY = [
   { name: "Dead Hang", group: "Forearms", equipment: "bodyweight" },
   { name: "Plate Pinch Hold", group: "Forearms", equipment: "barbell" },
   { name: "Zottman Curl", group: "Forearms", equipment: "dumbbell" },
+  { name: "Cable Wrist Curl", group: "Forearms", equipment: "cable" },
+  { name: "Cable Reverse Wrist Curl", group: "Forearms", equipment: "cable" },
 
-  // ── Traps (8+) ──────────────────────────────────────────────
+  // ── Traps ──────────────────────────────────────────────────
   { name: "Barbell Shrug", group: "Traps", equipment: "barbell" },
   { name: "Dumbbell Shrug", group: "Traps", equipment: "dumbbell" },
   { name: "Smith Machine Shrug", group: "Traps", equipment: "smith machine" },
@@ -243,8 +315,11 @@ export const EXERCISE_LIBRARY = [
   { name: "Rack Pull", group: "Traps", equipment: "barbell" },
   { name: "Kettlebell Shrug", group: "Traps", equipment: "kettlebell" },
   { name: "Behind-the-Back Barbell Shrug", group: "Traps", equipment: "barbell" },
+  { name: "Single-Arm Cable Shrug", group: "Traps", equipment: "cable" },
+  { name: "Behind-the-Back Cable Shrug", group: "Traps", equipment: "cable" },
+  { name: "HS Shrug", group: "Traps", equipment: "hammer strength" },
 
-  // ── Abs (10+) ───────────────────────────────────────────────
+  // ── Abs ────────────────────────────────────────────────────
   { name: "Cable Crunch", group: "Abs", equipment: "cable" },
   { name: "Hanging Leg Raise", group: "Abs", equipment: "bodyweight" },
   { name: "Hanging Knee Raise", group: "Abs", equipment: "bodyweight" },
@@ -258,6 +333,14 @@ export const EXERCISE_LIBRARY = [
   { name: "V-Up", group: "Abs", equipment: "bodyweight" },
   { name: "Woodchop", group: "Abs", equipment: "cable" },
   { name: "Dragon Flag", group: "Abs", equipment: "bodyweight" },
+  { name: "Kneeling Cable Crunch", group: "Abs", equipment: "cable" },
+  { name: "Standing Cable Crunch", group: "Abs", equipment: "cable" },
+  { name: "Cable Reverse Crunch", group: "Abs", equipment: "cable" },
+  { name: "Cable Side Bend", group: "Abs", equipment: "cable" },
+  { name: "Cable Oblique Twist", group: "Abs", equipment: "cable" },
+  { name: "Low-to-High Cable Chop", group: "Abs", equipment: "cable" },
+  { name: "High-to-Low Cable Chop", group: "Abs", equipment: "cable" },
+  { name: "HS Crunch", group: "Abs", equipment: "hammer strength" },
 
   // ── Neck (5) ───────────────────────────────────────────────
   { name: "Neck Curl (Plate)", group: "Neck", equipment: "barbell" },
@@ -777,7 +860,7 @@ export const PROGRAM_TEMPLATES = [
 
 export const EQUIPMENT_TYPES = [
   "barbell", "dumbbell", "machine", "cable", "bodyweight",
-  "smith machine", "band", "kettlebell",
+  "smith machine", "hammer strength", "band", "kettlebell",
 ];
 
 export const CARDIO_TYPES = [

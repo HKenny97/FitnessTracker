@@ -6,6 +6,7 @@ import {
   MUSCLE_GROUPS,
   progressRIR,
   progressSets,
+  epley1RM,
 } from "./rp.js";
 
 export const CUSTOM_MESO_ID = "_custom";
@@ -373,4 +374,189 @@ export async function weeklyVolume(mesoId, week) {
     out[s.muscleGroup] = (out[s.muscleGroup] || 0) + 1;
   }
   return out;
+}
+
+// ── Set edit/delete ──
+
+export async function deleteSet(id) {
+  const all = await sheets.readAll("sets");
+  await sheets.replaceAll("sets", all.filter((s) => s.id !== id));
+  invalidate("sets");
+}
+
+export async function updateSet(id, changes) {
+  const all = await sheets.readAll("sets");
+  const row = all.find((s) => s.id === id);
+  if (!row) return;
+  await sheets.upsertRow("sets", "id", { ...row, ...changes, id });
+  invalidate("sets");
+}
+
+// ── Mesocycle edit + duplicate ──
+
+export async function updateMesocycleInfo(id, changes) {
+  await sheets.upsertRow("mesocycles", "id", { id, ...changes });
+  invalidate("mesocycles");
+}
+
+export async function replaceTemplateDays(mesoId, days) {
+  const all = await sheets.readAll("templateDays");
+  const other = all.filter((d) => d.mesoId !== mesoId);
+  const newRows = days.map((d, i) => ({ mesoId, dayIndex: i, dayName: d.name }));
+  await sheets.replaceAll("templateDays", [...other, ...newRows]);
+  invalidate("templateDays");
+}
+
+export async function replaceTemplateExercises(mesoId, days) {
+  const all = await sheets.readAll("templateExercises");
+  const other = all.filter((e) => e.mesoId !== mesoId);
+  const newRows = [];
+  for (let di = 0; di < days.length; di++) {
+    (days[di].exercises || []).forEach((e, ei) => {
+      newRows.push({
+        mesoId, dayIndex: di, exerciseIndex: ei,
+        exercise: e.exercise, muscleGroup: e.muscleGroup, notes: e.notes || "",
+      });
+    });
+  }
+  await sheets.replaceAll("templateExercises", [...other, ...newRows]);
+  invalidate("templateExercises");
+}
+
+export async function recalculateWeekPlan(mesoId, weeks, days) {
+  const allPlan = await sheets.readAll("weekPlan");
+  const other = allPlan.filter((p) => p.mesoId !== mesoId);
+  const landmarks = await getLandmarks();
+  const groups = [...new Set(days.flatMap((d) => (d.exercises || []).map((e) => e.muscleGroup)).filter(Boolean))];
+  const rirByWeek = progressRIR(weeks);
+  const newRows = [];
+  for (const g of groups) {
+    const lm = landmarks[g] || DEFAULT_LANDMARKS[g] || { MV: 0, MEV: 8, MAV_lo: 12, MAV_hi: 18, MRV: 22 };
+    const sets = progressSets(lm.MEV, lm.MRV, weeks);
+    for (let w = 0; w < weeks; w++) {
+      newRows.push({
+        mesoId, week: w + 1, muscleGroup: g,
+        targetSets: sets[w], targetRIR: rirByWeek[w], isDeload: w === weeks - 1,
+      });
+    }
+  }
+  await sheets.replaceAll("weekPlan", [...other, ...newRows]);
+  invalidate("weekPlan");
+}
+
+export async function duplicateMesocycle(id) {
+  const [meso, allDays, allEx, allPlan] = await Promise.all([
+    getMesocycle(id),
+    sheets.readAll("templateDays"),
+    sheets.readAll("templateExercises"),
+    sheets.readAll("weekPlan"),
+  ]);
+  if (!meso) return null;
+  const cloneId = newId();
+  const clone = { ...meso, id: cloneId, name: `Copy of ${meso.name}`, status: "draft", createdAt: new Date().toISOString() };
+  await sheets.appendRow("mesocycles", clone);
+  const days = allDays.filter((d) => d.mesoId === id).map((d) => ({ ...d, mesoId: cloneId }));
+  const exs = allEx.filter((e) => e.mesoId === id).map((e) => ({ ...e, mesoId: cloneId }));
+  const plan = allPlan.filter((p) => p.mesoId === id).map((p) => ({ ...p, mesoId: cloneId }));
+  await Promise.all([
+    days.length && sheets.appendRows("templateDays", days),
+    exs.length && sheets.appendRows("templateExercises", exs),
+    plan.length && sheets.appendRows("weekPlan", plan),
+  ]);
+  invalidate("mesocycles"); invalidate("templateDays"); invalidate("templateExercises"); invalidate("weekPlan");
+  return cloneId;
+}
+
+// ── Body weight CRUD ──
+
+export async function listBodyWeights() {
+  return cached("bodyWeight", () => sheets.readAll("bodyWeight"));
+}
+
+export async function logBodyWeight({ date, weight, unit, notes }) {
+  const row = {
+    id: newId(), date: date || isoToday(),
+    weight: String(weight), unit: unit || "lbs", notes: notes || "",
+  };
+  await sheets.appendRow("bodyWeight", row);
+  invalidate("bodyWeight");
+  return row;
+}
+
+export async function deleteBodyWeight(id) {
+  const all = await sheets.readAll("bodyWeight");
+  await sheets.replaceAll("bodyWeight", all.filter((r) => r.id !== id));
+  invalidate("bodyWeight");
+}
+
+export async function updateBodyWeight(id, changes) {
+  await sheets.upsertRow("bodyWeight", "id", { id, ...changes });
+  invalidate("bodyWeight");
+}
+
+// ── Cardio edit ──
+
+export async function updateCardioEntry(id, changes) {
+  await sheets.upsertRow("cardio", "id", { id, ...changes });
+  invalidate("cardio");
+}
+
+// ── Session delete ──
+
+export async function deleteSession(id) {
+  const [allSessions, allSets] = await Promise.all([
+    sheets.readAll("sessions"),
+    sheets.readAll("sets"),
+  ]);
+  const session = allSessions.find((s) => s.id === id);
+  if (!session) return;
+  await Promise.all([
+    sheets.replaceAll("sessions", allSessions.filter((s) => s.id !== id)),
+    sheets.replaceAll("sets", allSets.filter((s) => s.date !== session.date || s.mesoId !== session.mesoId)),
+  ]);
+  invalidate("sessions"); invalidate("sets");
+}
+
+// ── PR tracking (computed) ──
+
+export async function getPersonalRecords(exercise) {
+  const all = await listSets();
+  const prs = {};
+  for (const s of all) {
+    if (exercise && s.exercise !== exercise) continue;
+    if (!prs[s.exercise]) prs[s.exercise] = { maxWeight: 0, maxReps: 0, max1RM: 0 };
+    const pr = prs[s.exercise];
+    const w = +s.weight, r = +s.reps;
+    if (w > pr.maxWeight) { pr.maxWeight = w; pr.maxWeightDate = s.date; pr.maxWeightReps = r; }
+    if (r > pr.maxReps) { pr.maxReps = r; pr.maxRepsDate = s.date; }
+    const e1 = epley1RM(w, r);
+    if (e1 > pr.max1RM) { pr.max1RM = Math.round(e1 * 10) / 10; pr.max1RMDate = s.date; }
+  }
+  return prs;
+}
+
+export async function getRecentPRs(limit = 5) {
+  const all = await listSets();
+  const sorted = [...all].sort((a, b) => a.date.localeCompare(b.date));
+  const bestByEx = {};
+  const prs = [];
+  for (const s of sorted) {
+    const w = +s.weight, r = +s.reps;
+    const e1 = epley1RM(w, r);
+    const prev = bestByEx[s.exercise];
+    if (!prev || w > prev.weight || e1 > prev.e1rm) {
+      if (prev) prs.push({ ...s, e1rm: Math.round(e1 * 10) / 10, type: w > prev.weight ? "weight" : "e1RM" });
+      bestByEx[s.exercise] = { weight: Math.max(w, prev?.weight || 0), e1rm: Math.max(e1, prev?.e1rm || 0) };
+    }
+  }
+  return prs.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);
+}
+
+// ── Data export ──
+
+export async function exportAllData() {
+  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "bodyWeight", "landmarks"];
+  const result = {};
+  await Promise.all(keys.map(async (k) => { result[k] = await sheets.readAll(k); }));
+  return result;
 }
