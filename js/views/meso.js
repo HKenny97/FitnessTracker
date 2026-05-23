@@ -1,7 +1,95 @@
 import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal } from "../ui.js";
 import * as data from "../data.js";
-import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, progressSets, progressRIR } from "../rp.js";
+import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, EXERCISE_SUBSTITUTES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
+
+function buildExerciseInput(exerciseLib, ex, onSelect) {
+  const wrapper = el("div", { class: "exercise-picker-wrap" });
+  const input = el("input", {
+    type: "text",
+    value: ex.exercise,
+    placeholder: "Search exercises…",
+    autocomplete: "off",
+  });
+  const dropdown = el("div", { class: "exercise-dropdown" });
+  wrapper.append(input, dropdown);
+
+  function search(query) {
+    dropdown.replaceChildren();
+    const q = query.toLowerCase().trim();
+    if (!q) { dropdown.classList.remove("open"); return; }
+
+    const nameMatches = exerciseLib.filter(
+      (e) => e.name.toLowerCase().includes(q),
+    );
+
+    const currentGroup = ex.muscleGroup || null;
+    const subs = [];
+    for (const [name, subList] of Object.entries(EXERCISE_SUBSTITUTES)) {
+      if (name.toLowerCase().includes(q)) {
+        for (const s of subList) {
+          if (!nameMatches.some((m) => m.name === s)) subs.push(s);
+        }
+      }
+    }
+    const matched = nameMatches.find((m) => m.name.toLowerCase() === q);
+    if (matched) {
+      const directSubs = EXERCISE_SUBSTITUTES[matched.name] || [];
+      for (const s of directSubs) {
+        if (!subs.includes(s) && !nameMatches.some((m) => m.name === s)) subs.push(s);
+      }
+    }
+    const subExercises = subs
+      .map((s) => exerciseLib.find((e) => e.name === s))
+      .filter(Boolean)
+      .slice(0, 10);
+
+    const groupMatches = currentGroup
+      ? exerciseLib
+          .filter((e) => e.group === currentGroup && !nameMatches.some((m) => m.name === e.name) && !subExercises.some((s) => s.name === e.name))
+          .slice(0, 8)
+      : [];
+
+    if (!nameMatches.length && !subExercises.length && !groupMatches.length) {
+      dropdown.classList.remove("open");
+      return;
+    }
+
+    function addSection(label, items) {
+      if (!items.length) return;
+      dropdown.append(el("div", { class: "exercise-dropdown-label" }, label));
+      for (const item of items) {
+        const opt = el("div", { class: "exercise-dropdown-item" },
+          el("span", {}, item.name),
+          el("span", { class: "muted small" }, item.group),
+        );
+        opt.onmousedown = (e) => {
+          e.preventDefault();
+          input.value = item.name;
+          onSelect(item.name, item.group);
+          dropdown.classList.remove("open");
+        };
+        dropdown.append(opt);
+      }
+    }
+
+    addSection("Matches", nameMatches.slice(0, 10));
+    addSection("Substitutes", subExercises);
+    addSection(currentGroup || "Same group", groupMatches);
+    dropdown.classList.add("open");
+  }
+
+  input.addEventListener("input", () => {
+    ex.exercise = input.value;
+    search(input.value);
+  });
+  input.addEventListener("focus", () => { if (input.value) search(input.value); });
+  input.addEventListener("blur", () => {
+    setTimeout(() => dropdown.classList.remove("open"), 150);
+  });
+
+  return wrapper;
+}
 
 export async function renderList(container) {
   const mesos = await data.listMesocycles();
@@ -187,15 +275,10 @@ export async function renderNew(container) {
         el("div", { class: "field-row", style: { marginTop: "0.5rem", alignItems: "end" } },
           el("div", {},
             el("label", {}, "Exercise"),
-            el("input", {
-              type: "text", value: ex.exercise, list: "exercise-list",
-              oninput: (e) => {
-                ex.exercise = e.target.value;
-                const match = exerciseLib.find(
-                  (lib) => lib.name.toLowerCase() === e.target.value.toLowerCase(),
-                );
-                if (match && !ex.muscleGroup) ex.muscleGroup = match.group;
-              },
+            buildExerciseInput(exerciseLib, ex, (name, group) => {
+              ex.exercise = name;
+              if (!ex.muscleGroup) ex.muscleGroup = group;
+              rerender();
             }),
           ),
           el("div", {},
@@ -298,13 +381,6 @@ export async function renderNew(container) {
   }
 
   rerender();
-
-  const existingDl = document.getElementById("exercise-list");
-  if (existingDl) existingDl.remove();
-  const dl = el("datalist", { id: "exercise-list" },
-    ...exerciseLib.map((x) => el("option", { value: x.name })),
-  );
-  document.body.append(dl);
 }
 
 export async function renderDetail(container, id) {
@@ -499,11 +575,11 @@ async function renderEdit(container, id) {
           el("div", { class: "field-row", style: { marginTop: "0.5rem", alignItems: "end" } },
             el("div", {},
               el("label", {}, "Exercise"),
-              el("input", { type: "text", value: ex.exercise, list: "exercise-list", oninput: (e) => {
-                ex.exercise = e.target.value;
-                const match = exerciseLib.find((lib) => lib.name.toLowerCase() === e.target.value.toLowerCase());
-                if (match && !ex.muscleGroup) ex.muscleGroup = match.group;
-              } }),
+              buildExerciseInput(exerciseLib, ex, (name, group) => {
+                ex.exercise = name;
+                if (!ex.muscleGroup) ex.muscleGroup = group;
+                rerender();
+              }),
             ),
             el("div", {},
               el("label", {}, "Muscle group"),
@@ -548,9 +624,4 @@ async function renderEdit(container, id) {
   }
 
   rerender();
-
-  const existingDl = document.getElementById("exercise-list");
-  if (existingDl) existingDl.remove();
-  const dl = el("datalist", { id: "exercise-list" }, ...exerciseLib.map((x) => el("option", { value: x.name })));
-  document.body.append(dl);
 }
