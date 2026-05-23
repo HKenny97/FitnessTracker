@@ -192,6 +192,13 @@ export async function listSets() {
   return cached("sets", () => sheets.readAll("sets"));
 }
 
+export async function getExerciseHistory(exercise) {
+  const all = await listSets();
+  return all
+    .filter(s => s.exercise === exercise)
+    .sort((a, b) => a.date.localeCompare(b.date) || (+a.setNumber || 0) - (+b.setNumber || 0));
+}
+
 export async function logSet(set) {
   const row = {
     id: newId(),

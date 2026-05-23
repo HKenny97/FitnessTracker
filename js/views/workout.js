@@ -1,7 +1,8 @@
 import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
-import { distributeSets, suggestWeight, MUSCLE_GROUPS } from "../rp.js";
+import { distributeSets, MUSCLE_GROUPS } from "../rp.js";
+import { analyze, adaptiveSuggestWeight } from "../adaptive.js";
 
 export async function render(container) {
   const active = await data.getActiveMesocycle();
@@ -206,13 +207,15 @@ async function renderSession(container, meso, week, day) {
 }
 
 async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
-  const [logged, prev] = await Promise.all([
+  const [logged, prev, history] = await Promise.all([
     data.sessionSets(meso.id, week, day.index, ex.exercise),
     data.previousTopSet(meso.id, day.index, ex.exercise, week),
+    data.getExerciseHistory(ex.exercise),
   ]);
 
+  const analysis = analyze(ex.exercise, history);
   const suggested = prev
-    ? suggestWeight(prev, Math.max(6, +prev.reps || 8), targetRIR)
+    ? adaptiveSuggestWeight(prev, analysis.repRange.min, targetRIR, ex.exercise, history)
     : null;
 
   let editingSetId = null;
@@ -225,11 +228,22 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
         el("div", { class: "exercise-meta" },
           el("span", { class: "pill" }, ex.muscleGroup),
           setTarget ? el("span", { class: "pill" }, `${setTarget} working sets`) : null,
+          el("span", { class: "pill" }, `${analysis.repRange.label} reps`),
+          el("span", { class: "pill" }, `${analysis.rest.label} rest`),
           el("span", { class: "pill" }, `${targetRIR} RIR`),
+          analysis.confidence !== "new"
+            ? el("span", { class: "pill" }, `↑ ${analysis.progression.label}/session`)
+            : null,
         ),
       ),
     ),
   );
+
+  if (analysis.fatigueWarning) {
+    block.append(
+      el("div", { class: "banner warning" }, `⚠️ ${analysis.fatigueWarning}`),
+    );
+  }
 
   if (prev) {
     block.append(
