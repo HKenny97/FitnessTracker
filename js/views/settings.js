@@ -111,7 +111,7 @@ export async function render(container) {
     const card = el("section", { class: "card" },
       el("h2", {}, "Volume landmarks"),
       el("p", { class: "muted small" },
-        "Weekly working sets per muscle group. RP defaults are pre-filled — adjust as you learn your own MEV and MRV."),
+        "Weekly working sets per muscle group. Defaults are pre-filled — adjust as you learn your own MEV and MRV."),
     );
     const table = el("table", { class: "meso-grid" });
     table.append(

@@ -94,7 +94,7 @@ export function defaultSessionState() {
   return {
     startTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
     endTime: "",
-    location: localStorage.getItem("rp.lastLocation") || "",
+    location: localStorage.getItem("gama.lastLocation") || localStorage.getItem("rp.lastLocation") || "",
     totalRPE: "",
     leafStatus: "No",
     notes: "",

@@ -110,4 +110,11 @@ document.addEventListener("click", (e) => {
   });
   if (!location.hash) location.hash = "#/";
   dispatch();
+
+  const loader = document.getElementById("gama-loader");
+  if (loader) {
+    loader.style.transition = "opacity 0.4s";
+    loader.style.opacity = "0";
+    setTimeout(() => loader.remove(), 400);
+  }
 })();

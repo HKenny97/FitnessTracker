@@ -25,7 +25,7 @@ export const config = {
   schemaVersion: 1,
 
   // Name of the spreadsheet the app creates the first time you sign in.
-  defaultSheetName: "HK FIT Data",
+  defaultSheetName: "GamaTraining Data",
 };
 
 // Allow runtime override from the Settings page.
