@@ -1,14 +1,7 @@
-import { el, fmtDate, isoToday, run, toast, withLoading } from "../ui.js";
+import { el, fmtDate, isoToday, run, toast, withLoading, stat } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
-
-function stat(value, label) {
-  return el("div", { class: "summary-stat" },
-    el("div", { class: "summary-stat-value" }, value),
-    el("div", { class: "summary-stat-label" }, label),
-  );
-}
 
 function formatVolume(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -35,14 +28,14 @@ export async function render(container, { signedIn }) {
   }
 
   // --- Load all data upfront ---
-  const [mesos, activeMeso, allSets, allSessions, cardioEntries, bodyWeights] = await Promise.all([
+  const [mesos, allSets, allSessions, cardioEntries, bodyWeights] = await Promise.all([
     data.listMesocycles(),
-    data.getActiveMesocycle(),
     data.listSets(),
     data.listSessions(),
     data.listCardio(),
     data.listBodyWeights(),
   ]);
+  const activeMeso = mesos.find((m) => m.status === "active") || null;
   const today = isoToday();
 
   // --- Quick stats row ---
@@ -298,7 +291,7 @@ export async function render(container, { signedIn }) {
         section.append(
           el("div", { class: "cardio-entry" },
             el("div", { class: "card-row" },
-              el("span", {}, entry.type || "Cardio"),
+              el("span", {}, entry.cardioType || "Cardio"),
               el("span", { class: "muted small" },
                 `${entry.duration || "?"} min · ${entry.date ? fmtDate(entry.date) : "—"}`,
               ),

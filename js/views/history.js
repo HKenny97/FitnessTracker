@@ -5,12 +5,14 @@ import { drawChart } from "../chart.js";
 import { epley1RM } from "../rp.js";
 
 export async function render(container) {
-  const [sessions, sets, allMesos, cardioEntries] = await Promise.all([
+  const [sessionsSrc, setsSrc, allMesos, cardioEntries] = await Promise.all([
     data.listSessions(),
     data.listSets(),
     data.listMesocycles(),
     data.listCardio(),
   ]);
+  const sessions = [...sessionsSrc];
+  const sets = [...setsSrc];
 
   const mesoById = {};
   for (const m of allMesos) mesoById[m.id] = m;

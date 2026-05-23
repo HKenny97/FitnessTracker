@@ -64,10 +64,25 @@ function wrap(fn) {
     } catch (e) {
       console.error(e);
       clear(view);
-      view.append(
-        el("div", { class: "banner error" },
-          e?.result?.error?.message || e?.message || "Something went wrong"),
-      );
+      const msg = e?.result?.error?.message || e?.message || "Something went wrong";
+      // If the error is auth-related, prompt to sign in instead of a
+      // generic error banner.
+      if (msg === "Not signed in" || e?.result?.error?.code === 401) {
+        view.append(
+          el("div", { class: "banner warn" },
+            "Your session expired. ",
+            el("button", { class: "btn primary small", onclick: () => auth.signIn() }, "Sign in again"),
+          ),
+        );
+      } else {
+        view.append(
+          el("div", { class: "banner error" },
+            msg,
+            " ",
+            el("button", { class: "btn small", onclick: () => location.reload() }, "Reload"),
+          ),
+        );
+      }
     }
   };
 }

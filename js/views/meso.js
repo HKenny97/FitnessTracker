@@ -121,8 +121,9 @@ export async function renderList(container) {
 }
 
 // In-memory mesocycle being designed.
+let dayCounter = 0;
 const blankDay = () => ({
-  name: "Day " + (Math.random().toString(36).slice(2, 4)),
+  name: "Day " + (++dayCounter),
   exercises: [],
 });
 

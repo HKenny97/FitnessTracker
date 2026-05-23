@@ -1,4 +1,4 @@
-import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal } from "../ui.js";
+import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets, MUSCLE_GROUPS } from "../rp.js";
@@ -404,7 +404,42 @@ async function renderCustomMode(root, onFinish) {
   const exercises = [];
   let filterGroup = "";
 
+  // Restore today's previously logged custom sets so the user can
+  // continue where they left off after a page refresh or navigation.
+  const todaySets = (await data.listSets())
+    .filter((s) => s.mesoId === CUSTOM_MESO_ID && s.date === isoToday())
+    .sort((a, b) => (+a.setNumber || 0) - (+b.setNumber || 0));
+  const groupedByExercise = new Map();
+  for (const s of todaySets) {
+    if (!groupedByExercise.has(s.exercise)) groupedByExercise.set(s.exercise, []);
+    groupedByExercise.get(s.exercise).push(s);
+  }
+  for (const [name, sets] of groupedByExercise) {
+    exercises.push({
+      exercise: name,
+      muscleGroup: sets[0].muscleGroup || "",
+      sets: sets.map((s) => ({
+        id: s.id,
+        weight: s.weight,
+        reps: s.reps,
+        rir: s.rir,
+        saved: true,
+      })),
+    });
+  }
+
   const session = defaultSessionState();
+
+  // Restore existing session metadata for today's custom workout.
+  const existingSession = await data.getSession(CUSTOM_MESO_ID, 0, 0, isoToday());
+  if (existingSession) {
+    session.startTime = existingSession.startTime || session.startTime;
+    session.endTime = existingSession.endTime || "";
+    session.location = existingSession.location || session.location;
+    session.totalRPE = existingSession.totalRPE || "";
+    session.leafStatus = existingSession.leafStatus || "No";
+    session.notes = existingSession.notes || "";
+  }
 
   async function saveSessionMeta() {
     if (!session.endTime) {
@@ -641,7 +676,9 @@ async function renderCustomMode(root, onFinish) {
       );
     }
 
-    ex.sets.push({ weight: "", reps: "", rir: "", saved: false });
+    if (!ex.sets.some((s) => !s.saved)) {
+      ex.sets.push({ weight: "", reps: "", rir: "", saved: false });
+    }
     renderSets();
     return block;
   }
@@ -819,9 +856,3 @@ async function renderSummary(container, mesoId, onBack) {
   container.append(summary);
 }
 
-function stat(value, label) {
-  return el("div", { class: "summary-stat" },
-    el("div", { class: "summary-stat-value" }, value),
-    el("div", { class: "summary-stat-label" }, label),
-  );
-}

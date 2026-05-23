@@ -20,7 +20,7 @@ async function cached(key, loader) {
 export function clearCaches() { cache.clear(); }
 
 export function newId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  return crypto.randomUUID();
 }
 
 // Volume landmarks: stored per muscle group. If the sheet is empty we
@@ -308,14 +308,12 @@ export async function deleteMesocycle(id) {
     sheets.readAll("sets"),
     sheets.readAll("sessions"),
   ]);
-  await Promise.all([
-    sheets.replaceAll("mesocycles", allMesos.filter((m) => m.id !== id)),
-    sheets.replaceAll("templateDays", allDays.filter((d) => d.mesoId !== id)),
-    sheets.replaceAll("templateExercises", allEx.filter((e) => e.mesoId !== id)),
-    sheets.replaceAll("weekPlan", allPlan.filter((p) => p.mesoId !== id)),
-    sheets.replaceAll("sets", allSets.filter((s) => s.mesoId !== id)),
-    sheets.replaceAll("sessions", allSessions.filter((s) => s.mesoId !== id)),
-  ]);
+  await sheets.replaceAll("mesocycles", allMesos.filter((m) => m.id !== id));
+  await sheets.replaceAll("templateDays", allDays.filter((d) => d.mesoId !== id));
+  await sheets.replaceAll("templateExercises", allEx.filter((e) => e.mesoId !== id));
+  await sheets.replaceAll("weekPlan", allPlan.filter((p) => p.mesoId !== id));
+  await sheets.replaceAll("sets", allSets.filter((s) => s.mesoId !== id));
+  await sheets.replaceAll("sessions", allSessions.filter((s) => s.mesoId !== id));
   for (const k of ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions"]) invalidate(k);
 }
 
@@ -517,10 +515,10 @@ export async function deleteSession(id) {
   ]);
   const session = allSessions.find((s) => s.id === id);
   if (!session) return;
-  await Promise.all([
-    sheets.replaceAll("sessions", allSessions.filter((s) => s.id !== id)),
-    sheets.replaceAll("sets", allSets.filter((s) => s.date !== session.date || s.mesoId !== session.mesoId)),
-  ]);
+  await sheets.replaceAll("sessions", allSessions.filter((s) => s.id !== id));
+  await sheets.replaceAll("sets", allSets.filter((s) =>
+    s.mesoId !== session.mesoId || s.date !== session.date ||
+    String(s.week) !== String(session.week) || String(s.dayIndex) !== String(session.dayIndex)));
   invalidate("sessions"); invalidate("sets");
 }
 

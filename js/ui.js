@@ -8,7 +8,6 @@ export function el(tag, attrs = {}, ...children) {
     else if (k === "style" && typeof v === "object") Object.assign(node.style, v);
     else if (k.startsWith("on") && typeof v === "function") {
       node.addEventListener(k.slice(2).toLowerCase(), v);
-    } else if (k === "html") node.innerHTML = v;
     else node.setAttribute(k, v);
   }
   for (const c of children.flat()) {
@@ -101,8 +100,14 @@ export function defaultSessionState() {
   };
 }
 
+export function stat(value, label) {
+  return el("div", { class: "summary-stat" },
+    el("div", { class: "summary-stat-value" }, value),
+    el("div", { class: "summary-stat-label" }, label),
+  );
+}
+
 export function buildSessionMetaForm(session, onSave) {
-  const { MUSCLE_GROUPS } = {};
   const card = el("section", { class: "card session-meta" },
     el("h3", {}, "Session info"),
     el("div", { class: "field-row four" },

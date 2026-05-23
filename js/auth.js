@@ -7,6 +7,8 @@ let tokenExpiresAt = 0;
 let userEmail = null;
 let gapiReady = false;
 let gsiReady = false;
+let refreshTimer = null;
+let pendingRefresh = null;  // dedup concurrent ensureToken calls
 
 const subscribers = new Set();
 
@@ -42,6 +44,18 @@ function restoreToken() {
 
 function clearTokenCache() {
   localStorage.removeItem("rp.token");
+}
+
+// Schedule a proactive token refresh 5 minutes before expiry.
+function scheduleRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
+  if (!tokenExpiresAt) return;
+  const ms = tokenExpiresAt - Date.now() - 5 * 60 * 1000; // 5 min before
+  if (ms <= 0) return;
+  refreshTimer = setTimeout(() => {
+    ensureToken().catch((e) => console.warn("Proactive refresh failed:", e));
+  }, ms);
 }
 
 export function onAuthChange(cb) {
@@ -108,6 +122,7 @@ export async function init() {
       tokenExpiresAt = Date.now() + (resp.expires_in - 60) * 1000;
       window.gapi.client.setToken({ access_token: accessToken });
       localStorage.setItem("rp.consentGiven", "1");
+      scheduleRefresh();
       fetchUserInfo().then(() => {
         cacheToken();
         notify();
@@ -127,14 +142,34 @@ export async function init() {
         const info = await r.json();
         userEmail = info.email || userEmail;
         cacheToken();
+        scheduleRefresh();
         notify();
         return;
       }
     } catch { /* fall through to normal flow */ }
+
+    // Token invalid — try a silent refresh before giving up.
     accessToken = null;
     tokenExpiresAt = 0;
     clearTokenCache();
     window.gapi.client.setToken(null);
+
+    if (localStorage.getItem("rp.consentGiven")) {
+      try {
+        await doSilentRefresh();
+        // Success — we're signed in again.
+        notify();
+        return;
+      } catch { /* silent refresh failed */ }
+    }
+    silentRestoreFailed = true;
+  } else if (localStorage.getItem("rp.consentGiven")) {
+    // No cached token at all, but user consented before — try silent refresh.
+    try {
+      await doSilentRefresh();
+      notify();
+      return;
+    } catch { /* fall through */ }
     silentRestoreFailed = true;
   }
 
@@ -161,23 +196,64 @@ export function didSilentRestoreFail() {
   return v;
 }
 
-export async function ensureToken() {
-  if (accessToken && Date.now() < tokenExpiresAt - 60000) return;
-  if (!tokenClient || !accessToken) return;
-  await new Promise((resolve, reject) => {
+// Internal: request a new token silently (no consent prompt).
+// Resolves on success, rejects if Google shows an error.
+function doSilentRefresh() {
+  return new Promise((resolve, reject) => {
     const prev = tokenClient.callback;
     tokenClient.callback = (resp) => {
       tokenClient.callback = prev;
-      if (resp.error) { reject(new Error(resp.error)); return; }
+      if (resp.error) {
+        reject(new Error(resp.error));
+        return;
+      }
       accessToken = resp.access_token;
       tokenExpiresAt = Date.now() + (resp.expires_in - 60) * 1000;
       window.gapi.client.setToken({ access_token: accessToken });
-      cacheToken();
-      notify();
+      localStorage.setItem("rp.consentGiven", "1");
+      scheduleRefresh();
+      fetchUserInfo().then(() => {
+        cacheToken();
+        notify();
+      });
       resolve();
     };
     tokenClient.requestAccessToken({ prompt: "", login_hint: userEmail || "" });
   });
+}
+
+export async function ensureToken() {
+  // Still valid — nothing to do.
+  if (accessToken && Date.now() < tokenExpiresAt - 60000) return;
+
+  // No tokenClient means auth.init() hasn't run or no client ID.
+  if (!tokenClient) return;
+
+  // If user never consented, we can't silently refresh — they need to
+  // click Sign In.  Throw so callers know auth is required.
+  if (!localStorage.getItem("rp.consentGiven")) {
+    throw new Error("Not signed in");
+  }
+
+  // Dedup: if a refresh is already in flight, piggyback on it.
+  if (pendingRefresh) {
+    await pendingRefresh;
+    return;
+  }
+
+  pendingRefresh = doSilentRefresh()
+    .catch((err) => {
+      // Silent refresh failed — clear state so UI shows "Sign in".
+      accessToken = null;
+      tokenExpiresAt = 0;
+      clearTokenCache();
+      window.gapi.client.setToken(null);
+      notify();
+      throw err;
+    })
+    .finally(() => { pendingRefresh = null; });
+
+  await pendingRefresh;
 }
 
 export function signIn() {
@@ -196,6 +272,7 @@ export function signIn() {
 }
 
 export function signOut() {
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
   if (accessToken && window.google?.accounts?.oauth2) {
     window.google.accounts.oauth2.revoke(accessToken, () => {});
   }
@@ -204,5 +281,6 @@ export function signOut() {
   userEmail = null;
   window.gapi?.client?.setToken(null);
   clearTokenCache();
+  localStorage.removeItem("rp.consentGiven");
   notify();
 }

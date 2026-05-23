@@ -182,6 +182,32 @@ function tab(key) {
   return t;
 }
 
+// Wrap a Sheets API call: if it 401s, refresh the token and retry once.
+async function withRetry(fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e?.result?.error?.code === 401 || e?.status === 401) {
+      await ensureToken();
+      return await fn();
+    }
+    throw e;
+  }
+}
+
+function parseRows(result, key) {
+  const rows = result.values || [];
+  if (!rows.length) return [];
+  const [headers, ...body] = rows;
+  return body
+    .filter((row) => row.length > 0)
+    .map((row) => {
+      const obj = {};
+      headers.forEach((h, i) => (obj[h] = row[i] ?? ""));
+      return obj;
+    });
+}
+
 // Read all rows of a tab as objects keyed by header name.
 export async function readAll(key) {
   await ensureToken();
@@ -189,37 +215,15 @@ export async function readAll(key) {
   if (!id) return [];
   const t = tab(key);
   try {
-    const r = await api().spreadsheets.values.get({
-      spreadsheetId: id,
-      range: `${t.title}`,
-    });
-    const rows = r.result.values || [];
-    if (!rows.length) return [];
-    const [headers, ...body] = rows;
-    return body
-      .filter((row) => row.length > 0)
-      .map((row) => {
-        const obj = {};
-        headers.forEach((h, i) => (obj[h] = row[i] ?? ""));
-        return obj;
-      });
-  } catch (e) {
-    if (e?.result?.error?.code === 400) return [];
-    if (e?.result?.error?.code === 401) {
-      await ensureToken();
-      const retry = await api().spreadsheets.values.get({
+    const r = await withRetry(() =>
+      api().spreadsheets.values.get({
         spreadsheetId: id,
         range: `${t.title}`,
-      });
-      const rows2 = retry.result.values || [];
-      if (!rows2.length) return [];
-      const [h2, ...b2] = rows2;
-      return b2.filter((row) => row.length > 0).map((row) => {
-        const obj = {};
-        h2.forEach((h, i) => (obj[h] = row[i] ?? ""));
-        return obj;
-      });
-    }
+      }),
+    );
+    return parseRows(r.result, key);
+  } catch (e) {
+    if (e?.result?.error?.code === 400) return [];
     throw e;
   }
 }
@@ -238,13 +242,15 @@ export async function appendRow(key, row) {
   const id = getSpreadsheetId();
   const t = tab(key);
   const values = Array.isArray(row) ? [row] : [rowFromObject(key, row)];
-  return api().spreadsheets.values.append({
-    spreadsheetId: id,
-    range: `${t.title}!A1`,
-    valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
-    resource: { values },
-  });
+  return withRetry(() =>
+    api().spreadsheets.values.append({
+      spreadsheetId: id,
+      range: `${t.title}!A1`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      resource: { values },
+    }),
+  );
 }
 
 export async function appendRows(key, rows) {
@@ -255,13 +261,15 @@ export async function appendRows(key, rows) {
   const values = rows.map((r) =>
     Array.isArray(r) ? r : rowFromObject(key, r),
   );
-  return api().spreadsheets.values.append({
-    spreadsheetId: id,
-    range: `${t.title}!A1`,
-    valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
-    resource: { values },
-  });
+  return withRetry(() =>
+    api().spreadsheets.values.append({
+      spreadsheetId: id,
+      range: `${t.title}!A1`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      resource: { values },
+    }),
+  );
 }
 
 // Overwrite a tab's contents (keeps header).
@@ -270,20 +278,24 @@ export async function replaceAll(key, rows) {
   const id = getSpreadsheetId();
   const t = tab(key);
   // Clear everything below the header, then write fresh data.
-  await api().spreadsheets.values.clear({
-    spreadsheetId: id,
-    range: `${t.title}!A2:Z`,
-  });
+  await withRetry(() =>
+    api().spreadsheets.values.clear({
+      spreadsheetId: id,
+      range: `${t.title}!A2:Z`,
+    }),
+  );
   if (!rows.length) return;
   const values = rows.map((r) =>
     Array.isArray(r) ? r : rowFromObject(key, r),
   );
-  return api().spreadsheets.values.update({
-    spreadsheetId: id,
-    range: `${t.title}!A2`,
-    valueInputOption: "USER_ENTERED",
-    resource: { values },
-  });
+  return withRetry(() =>
+    api().spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${t.title}!A2`,
+      valueInputOption: "USER_ENTERED",
+      resource: { values },
+    }),
+  );
 }
 
 // Update or insert a single row matched by primary key column.
@@ -300,10 +312,12 @@ export async function upsertRow(key, primaryKey, obj) {
   const t = tab(key);
   const merged = { ...all[idx], ...obj };
   const row = headers.map((h) => merged[h] ?? "");
-  return api().spreadsheets.values.update({
-    spreadsheetId: getSpreadsheetId(),
-    range: `${t.title}!A${sheetRow}`,
-    valueInputOption: "USER_ENTERED",
-    resource: { values: [row] },
-  });
+  return withRetry(() =>
+    api().spreadsheets.values.update({
+      spreadsheetId: getSpreadsheetId(),
+      range: `${t.title}!A${sheetRow}`,
+      valueInputOption: "USER_ENTERED",
+      resource: { values: [row] },
+    }),
+  );
 }
