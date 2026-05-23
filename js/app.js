@@ -106,30 +106,40 @@ document.addEventListener("click", (e) => {
   }
 });
 
-(async () => {
-  await auth.init();
-  if (auth.didSilentRestoreFail()) {
-    toast("Session expired — please sign in again", "warn");
-  }
-  const initState = auth.getState();
-  if (initState.signedIn && sheets.getSpreadsheetId()) {
-    try {
-      await sheets.ensureTabs(sheets.getSpreadsheetId());
-    } catch (e) {
-      console.error("Failed to ensure tabs:", e);
-    }
-  }
-  auth.onAuthChange((state) => {
-    renderAuth(state);
-    dispatch();
-  });
-  if (!location.hash) location.hash = "#/";
-  dispatch();
-
+function hideLoader() {
   const loader = document.getElementById("gama-loader");
-  if (loader) {
-    loader.style.transition = "opacity 0.4s";
-    loader.style.opacity = "0";
-    setTimeout(() => loader.remove(), 400);
+  if (!loader) return;
+  loader.style.transition = "opacity 0.4s";
+  loader.style.opacity = "0";
+  setTimeout(() => loader.remove(), 400);
+}
+
+(async () => {
+  try {
+    await auth.init();
+    if (auth.didSilentRestoreFail()) {
+      toast("Session expired — please sign in again", "warn");
+    }
+    const initState = auth.getState();
+    if (initState.signedIn && sheets.getSpreadsheetId()) {
+      try {
+        await sheets.ensureTabs(sheets.getSpreadsheetId());
+      } catch (e) {
+        console.error("Failed to ensure tabs:", e);
+      }
+    }
+    auth.onAuthChange((state) => {
+      renderAuth(state);
+      dispatch();
+    });
+    if (!location.hash) location.hash = "#/";
+    dispatch();
+  } catch (e) {
+    console.error("App initialization failed:", e);
+    if (!location.hash) location.hash = "#/";
+    try { dispatch(); } catch (e2) { console.error("Dispatch failed:", e2); }
+    toast("Couldn't reach Google — some features unavailable", "warn");
+  } finally {
+    hideLoader();
   }
 })();

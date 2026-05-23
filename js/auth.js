@@ -78,31 +78,72 @@ export function getAccessToken() {
   return accessToken;
 }
 
+const LIBS_TIMEOUT_MS = 10000;
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 async function waitForLibs() {
-  await new Promise((resolve) => {
+  const libsLoaded = await new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), LIBS_TIMEOUT_MS);
     const tick = () => {
-      if (window.gapi && window.google?.accounts?.oauth2) return resolve();
+      if (done) return;
+      if (window.gapi && window.google?.accounts?.oauth2) {
+        clearTimeout(timer);
+        return finish(true);
+      }
       setTimeout(tick, 50);
     };
     tick();
   });
+
+  if (!libsLoaded) {
+    console.warn("Google libraries failed to load — app will run signed-out.");
+    return;
+  }
+
   if (!gapiReady) {
-    await new Promise((resolve) =>
-      window.gapi.load("client", { callback: resolve, onerror: resolve }),
-    );
-    await window.gapi.client.init({
-      discoveryDocs: [
-        "https://sheets.googleapis.com/$discovery/rest?version=v4",
-        "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
-      ],
-    });
-    gapiReady = true;
+    try {
+      await new Promise((resolve) =>
+        window.gapi.load("client", { callback: resolve, onerror: resolve }),
+      );
+      await withTimeout(
+        window.gapi.client.init({
+          discoveryDocs: [
+            "https://sheets.googleapis.com/$discovery/rest?version=v4",
+            "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+          ],
+        }),
+        LIBS_TIMEOUT_MS,
+        "gapi.client.init",
+      );
+      gapiReady = true;
+    } catch (e) {
+      console.warn("gapi.client.init failed:", e);
+      return;
+    }
   }
   gsiReady = true;
 }
 
 export async function init() {
   await waitForLibs();
+  if (!gsiReady || !window.google?.accounts?.oauth2) {
+    notify();
+    return;
+  }
   if (!config.googleClientId) {
     notify();
     return;
