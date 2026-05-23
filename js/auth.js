@@ -176,9 +176,12 @@ export async function init() {
     window.gapi.client.setToken({ access_token: accessToken });
     // Verify the token is still accepted by Google.
     try {
-      const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const r = await withTimeout(
+        fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+        5000, "userinfo",
+      );
       if (r.ok) {
         const info = await r.json();
         userEmail = info.email || userEmail;
@@ -189,29 +192,25 @@ export async function init() {
       }
     } catch { /* fall through to normal flow */ }
 
-    // Token invalid — try a silent refresh before giving up.
+    // Token invalid — clear it and kick off a background silent refresh.
+    // Don't await: GSI silent refresh can hang indefinitely (3p cookies
+    // blocked, ambiguous account, Safari ITP, etc.) and we must not
+    // block boot on it. doSilentRefresh calls notify() on success, so
+    // the UI flips to signed-in automatically when it lands.
     accessToken = null;
     tokenExpiresAt = 0;
     clearTokenCache();
     window.gapi.client.setToken(null);
 
     if (localStorage.getItem("rp.consentGiven")) {
-      try {
-        await doSilentRefresh();
-        // Success — we're signed in again.
-        notify();
-        return;
-      } catch { /* silent refresh failed */ }
+      doSilentRefresh().catch(() => { /* stays signed-out */ });
+    } else {
+      silentRestoreFailed = true;
     }
-    silentRestoreFailed = true;
   } else if (localStorage.getItem("rp.consentGiven")) {
-    // No cached token at all, but user consented before — try silent refresh.
-    try {
-      await doSilentRefresh();
-      notify();
-      return;
-    } catch { /* fall through */ }
-    silentRestoreFailed = true;
+    // No cached token at all, but user consented before — try silent
+    // refresh in the background (same rationale as above).
+    doSilentRefresh().catch(() => { /* stays signed-out */ });
   }
 
   notify();
