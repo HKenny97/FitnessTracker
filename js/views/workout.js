@@ -12,18 +12,40 @@ import { toDisplay, fromDisplay, unitLabel } from "../units.js";
 import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
 import { warmupSets } from "../warmup.js";
 
+// Quantitative tail for a detailed chip, tailored to what drove the read.
+function perfQuantText(perf) {
+  const u = unitLabel();
+  const pct = perf.deltaPct ? ` (${perf.deltaPct > 0 ? "+" : ""}${perf.deltaPct}%)` : "";
+  const d = perf.detail;
+  if (d && perf.driver === "weight") {
+    return `${toDisplay(d.todayWeight)} vs ~${toDisplay(d.normalWeight)} ${u}${pct}`;
+  }
+  if (d && perf.driver === "reps") {
+    return `${d.todayReps} vs ~${d.normalReps} reps${pct}`;
+  }
+  if (perf.expectedE1RM) {
+    return `est. 1RM ${toDisplay(perf.actualE1RM)} vs ${toDisplay(perf.expectedE1RM)} ${u}${pct}`;
+  }
+  return pct.trim();
+}
+
 // Performance-vs-normal pill from a performanceReason() result. The text states
 // the qualitative driver (e.g. "Heavier top set than usual"); the arrow + colour
-// convey above/below. Returns null when there's no baseline yet ("new"). The
-// numeric tooltip stays as a desktop-hover bonus.
-function perfPill(perf) {
+// convey above/below. When `detailed`, a softer quantitative tail (numbers behind
+// the read) is appended. Returns null when there's no baseline yet ("new").
+function perfPill(perf, detailed = false) {
   if (!perf || perf.level === "new" || !perf.phrase) return null;
   const cls = perf.level === "above" ? "perf-above" : perf.level === "below" ? "perf-below" : "perf-on";
   const arrow = perf.level === "above" ? "▲ " : perf.level === "below" ? "▼ " : "";
   const title = perf.expectedE1RM
     ? `Today's best est. 1RM ${toDisplay(perf.actualE1RM)} vs your normal ${toDisplay(perf.expectedE1RM)} ${unitLabel()}`
     : "";
-  return el("span", { class: "perf-pill " + cls, title }, arrow + perf.phrase);
+  const children = [arrow + perf.phrase];
+  if (detailed) {
+    const tail = perfQuantText(perf);
+    if (tail) children.push(el("span", { class: "perf-quant" }, " · " + tail));
+  }
+  return el("span", { class: "perf-pill " + cls, title }, ...children);
 }
 
 // Bottom-sheet plate calculator. `initialDisplay` is a weight in the current
@@ -1369,7 +1391,7 @@ export async function renderSummary(container, mesoId, date, onBack) {
           `${h.sets} sets · Top: ${toDisplay(h.topWeight)} × ${h.topReps}`,
           h.comparison ? ` (was ${toDisplay(h.comparison.prevWeight)} × ${h.comparison.prevReps})` : " (new)",
         ),
-        perfPill(h.perf),
+        perfPill(h.perf, true),
       ),
     );
   }

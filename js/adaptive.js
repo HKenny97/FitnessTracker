@@ -375,7 +375,7 @@ function round1(n) {
 // full perf object plus `phrase` (null when there's no baseline).
 export function performanceReason(priorSets, todaySets) {
   const perf = performanceVsNormal(priorSets, todaySets);
-  if (perf.level === "new") return { ...perf, phrase: null };
+  if (perf.level === "new") return { ...perf, phrase: null, driver: null, detail: null };
 
   const todayTop = todaySets && todaySets.length ? topSetOfSession(todaySets) : null;
   const recentTops = groupIntoSessions(priorSets)
@@ -383,7 +383,7 @@ export function performanceReason(priorSets, todaySets) {
     .map(topSetOfSession);
 
   if (!todayTop || !recentTops.length) {
-    return { ...perf, phrase: levelFallbackPhrase(perf.level) };
+    return { ...perf, phrase: levelFallbackPhrase(perf.level), driver: "generic", detail: null };
   }
 
   const avgW = recentTops.reduce((s, t) => s + t.weight, 0) / recentTops.length;
@@ -392,7 +392,15 @@ export function performanceReason(priorSets, todaySets) {
   const wDir = todayTop.weight - avgW > wThresh ? 1 : avgW - todayTop.weight > wThresh ? -1 : 0;
   const rDir = todayTop.reps - avgR > 0.5 ? 1 : avgR - todayTop.reps > 0.5 ? -1 : 0;
 
-  return { ...perf, phrase: driverPhrase(perf.level, wDir, rDir) };
+  const driver = wDir !== 0 && rDir !== 0 ? "both" : wDir !== 0 ? "weight" : rDir !== 0 ? "reps" : "generic";
+  const detail = {
+    todayWeight: todayTop.weight,
+    todayReps: todayTop.reps,
+    normalWeight: Math.round(avgW),
+    normalReps: Math.round(avgR),
+  };
+
+  return { ...perf, phrase: driverPhrase(perf.level, wDir, rDir), driver, detail };
 }
 
 function levelFallbackPhrase(level) {

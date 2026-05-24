@@ -769,7 +769,10 @@ input[type="number"] {
   font-size: 0.78rem;
   font-weight: 600;
   border: 1px solid transparent;
+  max-width: 100%;
+  white-space: normal;
 }
+.perf-quant { font-weight: 500; opacity: 0.85; }
 .perf-above { color: var(--ok); background: rgba(57, 181, 74, 0.12); border-color: rgba(57, 181, 74, 0.35); }
 .perf-on { color: var(--muted); background: var(--panel-2); }
 .perf-below { color: var(--warn); background: rgba(246, 183, 60, 0.12); border-color: rgba(246, 183, 60, 0.35); }

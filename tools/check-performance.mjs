@@ -135,43 +135,50 @@ const threePrior = (w, r) => [
   ...sess("2026-05-15", w, r),
 ];
 
-// No baseline → no phrase.
-ok(performanceReason([], sess("2026-05-24", 200)).phrase === null,
-  "reason: new lifter → phrase null");
+// No baseline → no phrase / driver / detail.
+{
+  const r = performanceReason([], sess("2026-05-24", 200));
+  ok(r.phrase === null && r.driver === null && r.detail === null,
+    "reason: new lifter → phrase/driver/detail null");
+}
 
-// Heavier today, same reps → "Heavier top set than usual".
+// Heavier today, same reps → weight driver + detail numbers.
 {
   const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 220, 5));
   ok(r.level === "above" && r.phrase === "Heavier top set than usual",
     `reason heavier (got ${r.level} / ${r.phrase})`);
+  ok(r.driver === "weight" && r.detail.todayWeight === 220 && r.detail.normalWeight === 200,
+    `heavier detail (got ${r.driver} / ${JSON.stringify(r.detail)})`);
 }
 
-// Same weight, more reps → "More reps than usual".
+// Same weight, more reps → reps driver + detail numbers.
 {
   const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 200, 8));
   ok(r.level === "above" && r.phrase === "More reps than usual",
     `reason more reps (got ${r.level} / ${r.phrase})`);
+  ok(r.driver === "reps" && r.detail.todayReps === 8 && r.detail.normalReps === 5,
+    `more-reps detail (got ${r.driver} / ${JSON.stringify(r.detail)})`);
 }
 
-// Lighter today → "Lighter top set than usual".
+// Lighter today → weight driver, below.
 {
   const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 180, 5));
-  ok(r.level === "below" && r.phrase === "Lighter top set than usual",
-    `reason lighter (got ${r.level} / ${r.phrase})`);
+  ok(r.level === "below" && r.phrase === "Lighter top set than usual" && r.driver === "weight",
+    `reason lighter (got ${r.level} / ${r.phrase} / ${r.driver})`);
 }
 
-// Same weight, fewer reps → "Fewer reps than usual".
+// Same weight, fewer reps → reps driver, below.
 {
   const r = performanceReason(threePrior(200, 6), sess("2026-05-22", 200, 4));
-  ok(r.level === "below" && r.phrase === "Fewer reps than usual",
-    `reason fewer reps (got ${r.level} / ${r.phrase})`);
+  ok(r.level === "below" && r.phrase === "Fewer reps than usual" && r.driver === "reps",
+    `reason fewer reps (got ${r.level} / ${r.phrase} / ${r.driver})`);
 }
 
-// Essentially identical → "On par with your usual".
+// Essentially identical → on par, generic driver.
 {
   const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 201, 5));
-  ok(r.level === "on" && r.phrase === "On par with your usual",
-    `reason on par (got ${r.level} / ${r.phrase})`);
+  ok(r.level === "on" && r.phrase === "On par with your usual" && r.driver === "generic",
+    `reason on par (got ${r.level} / ${r.phrase} / ${r.driver})`);
 }
 
 if (failures) { console.error(`\n${failures} performance check failure(s).`); process.exit(1); }
