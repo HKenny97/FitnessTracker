@@ -1,7 +1,8 @@
 import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
-import { distributeSets, suggestSetAdjustment } from "../rp.js";
+import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS } from "../rp.js";
+import { suggestForGroups, sessionZone } from "../suggest.js";
 import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight } from "../adaptive.js";
 import { parseSets } from "../parse-sets.js";
@@ -645,9 +646,12 @@ async function renderCustomMode(root, onFinish) {
   const exerciseLib = await data.getFullExerciseLibrary();
   const exercises = [];
 
-  // Restore today's previously logged custom sets so the user can
-  // continue where they left off after a page refresh or navigation.
-  const todaySets = (await data.listSets())
+  // Past usage ranks exercise suggestions; today's custom sets are restored so
+  // the user can continue after a refresh.
+  const allSets = await data.listSets();
+  const freqMap = {};
+  for (const s of allSets) freqMap[s.exercise] = (freqMap[s.exercise] || 0) + 1;
+  const todaySets = allSets
     .filter((s) => s.mesoId === CUSTOM_MESO_ID && s.date === isoToday())
     .sort((a, b) => (+a.setNumber || 0) - (+b.setNumber || 0));
   const groupedByExercise = new Map();
@@ -715,6 +719,111 @@ async function renderCustomMode(root, onFinish) {
 
   const findEntry = (name) => exercises.find((e) => normalizeName(e.exercise) === normalizeName(name));
 
+  // Freeform "workout focus": targeted muscle groups + per-session feedback.
+  const targetGroups = new Set();
+  const feedbackState = {};
+  const coverageContainer = el("div", {});
+  const feedbackContainer = el("div", {});
+
+  const trainedCounts = () => {
+    const counts = {};
+    for (const ex of exercises) {
+      const n = ex.sets.filter((s) => s.saved).length;
+      if (n) counts[ex.muscleGroup] = (counts[ex.muscleGroup] || 0) + n;
+    }
+    return counts;
+  };
+
+  function renderCoverage() {
+    coverageContainer.replaceChildren();
+    const counts = trainedCounts();
+    const groups = [...new Set([...targetGroups, ...Object.keys(counts)])];
+    if (!groups.length) return;
+    groups.sort((a, b) => (targetGroups.has(b) ? 1 : 0) - (targetGroups.has(a) ? 1 : 0));
+    const card = el("section", { class: "card" }, el("h3", {}, "Coverage"));
+    for (const g of groups) {
+      const sets = counts[g] || 0;
+      const ref = MUSCLE_REFERENCE[g] || { sessionCap: [3, 8], repRange: "", rest: "" };
+      const [lo, hi] = ref.sessionCap;
+      const zone = sessionZone(sets, ref.sessionCap);
+      const color = zone === "under" ? "var(--warn)" : zone === "over" ? "var(--accent)" : "var(--ok)";
+      const pct = Math.min(100, Math.round((sets / Math.max(1, hi)) * 100));
+      card.append(
+        el("div", { style: { marginTop: "0.5rem" } },
+          el("div", { class: "row", style: { justifyContent: "space-between" } },
+            el("span", {}, el("strong", {}, g), targetGroups.has(g) ? null : el("span", { class: "muted small" }, " · extra")),
+            el("span", { class: "muted small" }, `${sets} / ${lo}–${hi} sets`),
+          ),
+          el("div", { style: { height: "6px", background: "rgba(255,255,255,0.1)", borderRadius: "3px", overflow: "hidden", marginTop: "0.2rem" } },
+            el("div", { style: { width: pct + "%", height: "100%", background: color } }),
+          ),
+          ref.repRange ? el("div", { class: "muted small" }, `${ref.repRange} reps · ${ref.rest} rest`) : null,
+        ),
+      );
+    }
+    coverageContainer.append(card);
+  }
+
+  function renderFeedback() {
+    feedbackContainer.replaceChildren();
+    const muscles = Object.keys(trainedCounts());
+    if (!muscles.length) return;
+    for (const m of muscles) if (!feedbackState[m]) feedbackState[m] = { pump: 1, soreness: 1, jointPain: 0, performance: 2 };
+    feedbackContainer.append(buildFeedbackCard(muscles, feedbackState));
+  }
+
+  const refreshLive = () => { renderCoverage(); renderFeedback(); };
+
+  function buildFocusCard() {
+    const card = el("section", { class: "card" }, el("h3", {}, "Workout focus"));
+    const presetRow = el("div", { class: "chip-row" });
+    for (const [name, groups] of Object.entries(WORKOUT_PRESETS)) {
+      presetRow.append(el("button", { type: "button", class: "filter-chip", onclick: () => {
+        targetGroups.clear();
+        groups.forEach((g) => targetGroups.add(g));
+        rerender();
+      } }, name));
+    }
+    card.append(el("div", { class: "picker-filter-label" }, "Presets"), presetRow);
+    for (const [region, members] of Object.entries(MUSCLE_REGIONS)) {
+      const row = el("div", { class: "chip-row" });
+      for (const g of members) {
+        row.append(el("button", {
+          type: "button",
+          class: "filter-chip" + (targetGroups.has(g) ? " active" : ""),
+          onclick: () => { targetGroups.has(g) ? targetGroups.delete(g) : targetGroups.add(g); rerender(); },
+        }, g.replace(/^Shoulders \((.*)\)$/, "$1")));
+      }
+      card.append(el("div", { class: "picker-filter-label" }, region), row);
+    }
+    if (targetGroups.size) {
+      card.append(el("button", { class: "btn small ghost", style: { marginTop: "0.4rem" }, onclick: () => { targetGroups.clear(); rerender(); } }, "Clear focus"));
+    }
+    return card;
+  }
+
+  function buildSuggestions() {
+    if (!targetGroups.size) return null;
+    const exclude = exercises.map((e) => e.exercise);
+    const suggested = suggestForGroups([...targetGroups], exerciseLib, freqMap, { perGroup: 3, exclude });
+    const card = el("section", { class: "card" }, el("h3", {}, "Suggested exercises"));
+    let any = false;
+    for (const { group, exercises: list } of suggested) {
+      if (!list.length) continue;
+      any = true;
+      const row = el("div", { class: "chip-row" });
+      for (const e of list) {
+        row.append(el("button", { type: "button", class: "filter-chip", onclick: () => {
+          if (exercises.some((x) => normalizeName(x.exercise) === normalizeName(e.name))) return toast("Already added", "bad");
+          exercises.push({ exercise: e.name, muscleGroup: e.group, sets: [] });
+          rerender();
+        } }, e.name));
+      }
+      card.append(el("div", { class: "picker-filter-label" }, group), row);
+    }
+    return any ? card : null;
+  }
+
   // Quick-log path: parse "<exercise> <sets>" (e.g. "bench 3x8 @185"), resolve
   // the exercise (with alias/fuzzy matching), and append the parsed sets as
   // unsaved rows for review. Unparseable set chunks surface in a fix-up panel.
@@ -746,6 +855,10 @@ async function renderCustomMode(root, onFinish) {
     );
 
     customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
+    customRoot.append(buildFocusCard());
+    const suggestions = buildSuggestions();
+    if (suggestions) customRoot.append(suggestions);
+    customRoot.append(coverageContainer);
 
     const quickEx = el("input", {
       type: "text", autocomplete: "off",
@@ -789,12 +902,16 @@ async function renderCustomMode(root, onFinish) {
 
     if (!exercises.length) {
       customRoot.append(el("p", { class: "muted" }, "Add exercises above to start logging."));
+      renderCoverage();
       return;
     }
 
     for (const ex of exercises) {
-      customRoot.append(buildCustomBlock(ex));
+      customRoot.append(buildCustomBlock(ex, refreshLive));
     }
+
+    customRoot.append(feedbackContainer);
+    refreshLive();
 
     const finishBtn = el("button", { class: "btn primary finish-btn" }, "Finish Workout");
     finishBtn.onclick = withLoading(finishBtn, async () => {
@@ -802,12 +919,19 @@ async function renderCustomMode(root, onFinish) {
         session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
       }
       await saveSessionMeta();
+      const muscles = Object.keys(trainedCounts());
+      if (muscles.length) {
+        await run(data.logSessionFeedback({
+          mesoId: CUSTOM_MESO_ID, week: 0, dayIndex: 0, date: isoToday(),
+          feedback: muscles.map((m) => ({ muscleGroup: m, ...(feedbackState[m] || { pump: 1, soreness: 1, jointPain: 0, performance: 2 }) })),
+        }), { ok: "Workout saved" });
+      }
       onFinish();
     });
     customRoot.append(finishBtn);
   }
 
-  function buildCustomBlock(ex) {
+  function buildCustomBlock(ex, refreshLive) {
     let editingSetId = null;
     const block = el("div", { class: "exercise-block" });
     block.append(
@@ -816,6 +940,9 @@ async function renderCustomMode(root, onFinish) {
           el("h3", {}, ex.exercise),
           el("div", { class: "exercise-meta" },
             el("span", { class: "pill" }, ex.muscleGroup),
+            MUSCLE_REFERENCE[ex.muscleGroup]
+              ? el("span", { class: "muted small" }, `${MUSCLE_REFERENCE[ex.muscleGroup].repRange} reps · ${MUSCLE_REFERENCE[ex.muscleGroup].rest} rest`)
+              : null,
           ),
         ),
         el("button", {
@@ -899,6 +1026,7 @@ async function renderCustomMode(root, onFinish) {
             s.weight = weightLbs; s.reps = ed.reps; s.rir = ed.rir;
             editingSetId = null;
             renderSets();
+            refreshLive?.();
           });
           setsContainer.append(
             el("div", { class: "set-row editing" },
@@ -923,6 +1051,7 @@ async function renderCustomMode(root, onFinish) {
                     await run(data.deleteSet(s.id), { ok: "Set deleted" });
                     ex.sets.splice(i, 1);
                     renderSets();
+                    refreshLive?.();
                   });
                 } }, "×"),
               ),
@@ -951,6 +1080,7 @@ async function renderCustomMode(root, onFinish) {
             s.weight = fromDisplay(s.weight);
             s.saved = true;
             renderSets();
+            refreshLive?.();
           });
           setsContainer.append(
             el("div", { class: "set-row" },

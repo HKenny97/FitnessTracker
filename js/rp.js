@@ -40,23 +40,60 @@ export const MUSCLE_REGIONS = {
 // MAV = Maximum Adaptive Volume (range), MRV = Maximum Recoverable Volume.
 // All values are weekly working sets, RP defaults for an intermediate lifter.
 export const DEFAULT_LANDMARKS = {
-  Chest: { MV: 8, MEV: 10, MAV_lo: 12, MAV_hi: 20, MRV: 22 },
-  Back: { MV: 8, MEV: 10, MAV_lo: 14, MAV_hi: 22, MRV: 25 },
-  Quads: { MV: 6, MEV: 8, MAV_lo: 12, MAV_hi: 18, MRV: 20 },
-  Hamstrings: { MV: 4, MEV: 6, MAV_lo: 10, MAV_hi: 16, MRV: 20 },
-  Glutes: { MV: 2, MEV: 4, MAV_lo: 8, MAV_hi: 12, MRV: 16 },
-  "Shoulders (side delts)": { MV: 8, MEV: 8, MAV_lo: 16, MAV_hi: 22, MRV: 26 },
-  "Shoulders (rear delts)": { MV: 6, MEV: 8, MAV_lo: 14, MAV_hi: 20, MRV: 24 },
+  Chest: { MV: 6, MEV: 10, MAV_lo: 12, MAV_hi: 20, MRV: 22 },
+  Back: { MV: 7, MEV: 10, MAV_lo: 14, MAV_hi: 22, MRV: 25 },
+  Quads: { MV: 5, MEV: 7, MAV_lo: 12, MAV_hi: 18, MRV: 20 },
+  Hamstrings: { MV: 2, MEV: 5, MAV_lo: 10, MAV_hi: 16, MRV: 20 },
+  Glutes: { MV: 0, MEV: 0, MAV_lo: 4, MAV_hi: 12, MRV: 16 },
+  "Shoulders (side delts)": { MV: 0, MEV: 8, MAV_lo: 16, MAV_hi: 22, MRV: 26 },
+  "Shoulders (rear delts)": { MV: 0, MEV: 6, MAV_lo: 16, MAV_hi: 22, MRV: 26 },
   Biceps: { MV: 5, MEV: 8, MAV_lo: 14, MAV_hi: 20, MRV: 26 },
-  Triceps: { MV: 4, MEV: 6, MAV_lo: 10, MAV_hi: 14, MRV: 18 },
-  Calves: { MV: 6, MEV: 8, MAV_lo: 12, MAV_hi: 16, MRV: 20 },
+  Triceps: { MV: 3, MEV: 6, MAV_lo: 10, MAV_hi: 14, MRV: 18 },
+  Calves: { MV: 5, MEV: 7, MAV_lo: 12, MAV_hi: 16, MRV: 20 },
   Forearms: { MV: 2, MEV: 4, MAV_lo: 10, MAV_hi: 15, MRV: 20 },
   Traps: { MV: 0, MEV: 0, MAV_lo: 12, MAV_hi: 20, MRV: 26 },
-  Abs: { MV: 0, MEV: 0, MAV_lo: 16, MAV_hi: 25, MRV: 25 },
+  Abs: { MV: 0, MEV: 0, MAV_lo: 16, MAV_hi: 20, MRV: 25 },
   Neck: { MV: 0, MEV: 0, MAV_lo: 6, MAV_hi: 12, MRV: 16 },
-  "Shoulders (front delts)": { MV: 0, MEV: 0, MAV_lo: 6, MAV_hi: 12, MRV: 16 },
+  "Shoulders (front delts)": { MV: 0, MEV: 0, MAV_lo: 6, MAV_hi: 8, MRV: 12 },
   Adductors: { MV: 4, MEV: 6, MAV_lo: 8, MAV_hi: 14, MRV: 18 },
   Abductors: { MV: 4, MEV: 6, MAV_lo: 8, MAV_hi: 14, MRV: 18 },
+};
+
+// Per-muscle training reference (Pelland/Remmert 2025, Schoenfeld, RP). Static
+// guidance — independent of the user's editable landmarks. sessionCap is the
+// per-session working-set target window [lo, hi]; exceeding hi is past the
+// point of useful per-session volume (split across more sessions instead).
+export const MUSCLE_REFERENCE = {
+  Chest: { sessionCap: [8, 10], repRange: "8–12", rest: "2–3 min", freq: "1.5–3×" },
+  Back: { sessionCap: [8, 10], repRange: "6–20", rest: "2–3 min", freq: "2–4×" },
+  Traps: { sessionCap: [6, 8], repRange: "10–20", rest: "1–2 min", freq: "2–6×" },
+  Quads: { sessionCap: [6, 8], repRange: "8–15", rest: "3+ min", freq: "1.5–3×" },
+  Hamstrings: { sessionCap: [6, 8], repRange: "8–15", rest: "2–3 min", freq: "2–3×" },
+  Glutes: { sessionCap: [6, 8], repRange: "8–15", rest: "2–3 min", freq: "2–3×" },
+  "Shoulders (front delts)": { sessionCap: [4, 6], repRange: "6–12", rest: "1.5–2 min", freq: "1–2×" },
+  "Shoulders (side delts)": { sessionCap: [8, 10], repRange: "10–30", rest: "30–90 sec", freq: "2–6×" },
+  "Shoulders (rear delts)": { sessionCap: [8, 10], repRange: "10–30", rest: "1 min", freq: "2–6×" },
+  Biceps: { sessionCap: [6, 8], repRange: "8–15", rest: "60–120 sec", freq: "2–6×" },
+  Triceps: { sessionCap: [6, 8], repRange: "8–15", rest: "60–120 sec", freq: "2–4×" },
+  Calves: { sessionCap: [6, 8], repRange: "10–30", rest: "60–90 sec", freq: "2–4×" },
+  Abs: { sessionCap: [6, 8], repRange: "8–20", rest: "30 sec–2 min", freq: "3–6×" },
+  Forearms: { sessionCap: [6, 10], repRange: "10–20", rest: "60–90 sec", freq: "2–4×" },
+  Neck: { sessionCap: [6, 10], repRange: "10–20", rest: "60–90 sec", freq: "2–4×" },
+  Adductors: { sessionCap: [6, 10], repRange: "8–15", rest: "1–2 min", freq: "2–3×" },
+  Abductors: { sessionCap: [6, 10], repRange: "12–25", rest: "1 min", freq: "2–3×" },
+};
+
+// Named Freeform workout types → the muscle groups they target.
+export const WORKOUT_PRESETS = {
+  Push: ["Chest", "Shoulders (front delts)", "Shoulders (side delts)", "Triceps"],
+  Pull: ["Back", "Shoulders (rear delts)", "Biceps", "Forearms"],
+  Legs: ["Quads", "Hamstrings", "Glutes", "Calves"],
+  Upper: ["Chest", "Back", "Shoulders (side delts)", "Shoulders (rear delts)", "Biceps", "Triceps"],
+  "Full Body": ["Chest", "Back", "Quads", "Hamstrings", "Shoulders (side delts)", "Biceps", "Triceps"],
+  "Chest & Biceps": ["Chest", "Biceps"],
+  "Back & Triceps": ["Back", "Triceps"],
+  Arms: ["Biceps", "Triceps", "Forearms"],
+  Shoulders: ["Shoulders (side delts)", "Shoulders (rear delts)", "Shoulders (front delts)"],
 };
 
 // Comprehensive exercise library for hypertrophy training.

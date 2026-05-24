@@ -9,6 +9,8 @@
     "check:regions": "node tools/check-regions.mjs",
     "check:units": "node tools/check-units.mjs",
     "check:plates": "node tools/check-plates.mjs",
-    "check:autoreg": "node tools/check-autoreg.mjs"
+    "check:autoreg": "node tools/check-autoreg.mjs",
+    "check:suggest": "node tools/check-suggest.mjs",
+    "check:reference": "node tools/check-reference.mjs"
   }
 }
