@@ -95,10 +95,6 @@ const TABS = {
     title: "Cardio",
     headers: ["id", "date", "cardioType", "duration", "distance", "avgHeartRate", "perceivedDifficulty", "notes"],
   },
-  bodyWeight: {
-    title: "BodyWeight",
-    headers: ["id", "date", "weight", "unit", "notes"],
-  },
   sessionFeedback: {
     title: "SessionFeedback",
     headers: ["id", "mesoId", "week", "dayIndex", "date", "muscleGroup", "pump", "soreness", "jointPain", "performance"],

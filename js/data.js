@@ -545,33 +545,6 @@ export async function duplicateMesocycle(id) {
   return cloneId;
 }
 
-// ── Body weight CRUD ──
-
-export async function listBodyWeights() {
-  return cached("bodyWeight", () => sheets.readAll("bodyWeight"));
-}
-
-export async function logBodyWeight({ date, weight, unit, notes }) {
-  const row = {
-    id: newId(), date: date || isoToday(),
-    weight: String(weight), unit: unit || "lbs", notes: notes || "",
-  };
-  await sheets.appendRow("bodyWeight", row);
-  invalidate("bodyWeight");
-  return row;
-}
-
-export async function deleteBodyWeight(id) {
-  const all = await sheets.readAll("bodyWeight");
-  await sheets.replaceAll("bodyWeight", all.filter((r) => r.id !== id));
-  invalidate("bodyWeight");
-}
-
-export async function updateBodyWeight(id, changes) {
-  await sheets.upsertRow("bodyWeight", "id", { id, ...changes });
-  invalidate("bodyWeight");
-}
-
 // ── Cardio edit ──
 
 export async function updateCardioEntry(id, changes) {
@@ -633,7 +606,7 @@ export async function getRecentPRs(limit = 5) {
 // ── Data export ──
 
 export async function exportAllData() {
-  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "bodyWeight", "landmarks", "sessionFeedback", "weekPlanAdjustments"];
+  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "landmarks", "sessionFeedback", "weekPlanAdjustments"];
   const result = {};
   await Promise.all(keys.map(async (k) => { result[k] = await sheets.readAll(k); }));
   return result;

@@ -1,8 +1,7 @@
-import { el, fmtDate, isoToday, run, toast, withLoading, stat } from "../ui.js";
+import { el, fmtDate, isoToday, stat } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
-import { config } from "../config.js";
 import { toDisplay, unitLabel } from "../units.js";
 
 function formatVolume(n) {
@@ -30,12 +29,11 @@ export async function render(container, { signedIn }) {
   }
 
   // --- Load all data upfront ---
-  const [mesos, allSets, allSessions, cardioEntries, bodyWeights] = await Promise.all([
+  const [mesos, allSets, allSessions, cardioEntries] = await Promise.all([
     data.listMesocycles(),
     data.listSets(),
     data.listSessions(),
     data.listCardio(),
-    data.listBodyWeights(),
   ]);
   const activeMeso = mesos.find((m) => m.status === "active") || null;
   const today = isoToday();
@@ -55,14 +53,11 @@ export async function render(container, { signedIn }) {
     else break;
   }
 
-  const latestBW = bodyWeights.length ? bodyWeights.sort((a, b) => b.date.localeCompare(a.date))[0] : null;
-
   container.append(
     el("div", { class: "summary-stats" },
       stat(String(monthSessions.size), "Workouts this month"),
       stat(String(monthSets), "Sets this month"),
       stat(streak > 0 ? `${streak} day${streak !== 1 ? "s" : ""}` : "—", "Current streak"),
-      stat(latestBW ? `${latestBW.weight} ${latestBW.unit}` : "—", "Body weight"),
     ),
   );
 
@@ -71,52 +66,8 @@ export async function render(container, { signedIn }) {
     el("div", { class: "row", style: { gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" } },
       el("a", { class: "btn primary", href: "#/workout" }, "Start Workout"),
       el("a", { class: "btn", href: "#/cardio" }, "Log Cardio"),
-      el("button", { class: "btn", id: "bw-toggle" }, "Log Weight"),
     ),
   );
-
-  // --- Inline body weight form ---
-  const bwForm = el("div", { class: "bw-widget", style: { display: "none" } });
-  const bwState = { date: today, weight: "", unit: config.displayUnit === "kg" ? "kg" : "lbs", notes: "" };
-  const bwSaveBtn = el("button", { class: "btn primary small" }, "Save");
-  bwSaveBtn.onclick = withLoading(bwSaveBtn, async () => {
-    if (!bwState.weight) return toast("Enter weight", "bad");
-    await run(data.logBodyWeight(bwState), { ok: "Weight logged" });
-    bwState.weight = ""; bwState.notes = "";
-    bwForm.style.display = "none";
-    // Refresh
-    location.hash = "#/";
-  });
-  bwForm.append(
-    el("div", { class: "field-row" },
-      el("div", { class: "field" },
-        el("label", {}, "Weight"),
-        el("input", { type: "number", inputmode: "decimal", step: "0.1", placeholder: "e.g. 175", oninput: (e) => (bwState.weight = e.target.value) }),
-      ),
-      el("div", { class: "field" },
-        el("label", {}, "Unit"),
-        el("select", { onchange: (e) => (bwState.unit = e.target.value) },
-          el("option", { value: "lbs", selected: bwState.unit === "lbs" ? "" : null }, "lbs"),
-          el("option", { value: "kg", selected: bwState.unit === "kg" ? "" : null }, "kg"),
-        ),
-      ),
-      el("div", { class: "field" },
-        el("label", {}, "Date"),
-        el("input", { type: "date", value: bwState.date, oninput: (e) => (bwState.date = e.target.value) }),
-      ),
-    ),
-    el("div", { class: "field-row" },
-      el("div", { class: "field" },
-        el("label", {}, "Notes"),
-        el("input", { type: "text", placeholder: "Optional", oninput: (e) => (bwState.notes = e.target.value) }),
-      ),
-    ),
-    bwSaveBtn,
-  );
-  container.append(bwForm);
-  container.querySelector("#bw-toggle").onclick = () => {
-    bwForm.style.display = bwForm.style.display === "none" ? "" : "none";
-  };
 
   // --- Active meso summary (Enhancement 1: with sparklines) ---
   if (activeMeso) {
@@ -303,21 +254,6 @@ export async function render(container, { signedIn }) {
       }
     }
     container.append(section);
-  }
-
-  // --- Body weight trend chart ---
-  if (bodyWeights.length > 1) {
-    const sorted = bodyWeights.slice().sort((a, b) => a.date.localeCompare(b.date));
-    const pts = sorted.map((bw, i) => ({ x: i, y: +bw.weight }));
-    const labels = sorted.map((bw) => bw.date.slice(5));
-    const canvas = el("canvas", { style: { width: "100%", height: "200px" } });
-    container.append(
-      el("section", { class: "card" },
-        el("h3", {}, "Body weight trend"),
-        el("div", { class: "chart-container" }, canvas),
-      ),
-    );
-    requestAnimationFrame(() => drawChart(canvas, [{ label: "Weight", color: "#36c46b", points: pts }], { xLabels: labels, yLabel: bodyWeights[0].unit || "lbs" }));
   }
 
   // --- Recent PRs ---
