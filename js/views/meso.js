@@ -2,6 +2,7 @@ import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal } from "..
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, EXERCISE_SUBSTITUTES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
+import { openExercisePicker } from "../exercise-picker.js";
 
 function buildExerciseInput(exerciseLib, ex, onSelect) {
   const wrapper = el("div", { class: "exercise-picker-wrap" });
@@ -12,7 +13,21 @@ function buildExerciseInput(exerciseLib, ex, onSelect) {
     autocomplete: "off",
   });
   const dropdown = el("div", { class: "exercise-dropdown" });
-  wrapper.append(input, dropdown);
+  const browse = el("button", {
+    type: "button",
+    class: "btn small ghost picker-browse-btn",
+    title: "Browse by equipment",
+    onclick: () => openExercisePicker({
+      exerciseLib,
+      onPick: ({ name, group }) => {
+        input.value = name;
+        ex.exercise = name;
+        onSelect(name, group);
+        dropdown.classList.remove("open");
+      },
+    }),
+  }, "Browse");
+  wrapper.append(el("div", { class: "picker-input-row" }, input, browse), dropdown);
 
   function search(query) {
     dropdown.replaceChildren();

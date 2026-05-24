@@ -1,7 +1,8 @@
 import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
-import { distributeSets, MUSCLE_GROUPS } from "../rp.js";
+import { distributeSets } from "../rp.js";
+import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight } from "../adaptive.js";
 
 export async function render(container) {
@@ -408,7 +409,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
 async function renderCustomMode(root, onFinish) {
   const exerciseLib = await data.getFullExerciseLibrary();
   const exercises = [];
-  let filterGroup = "";
 
   // Restore today's previously logged custom sets so the user can
   // continue where they left off after a page refresh or navigation.
@@ -475,50 +475,21 @@ async function renderCustomMode(root, onFinish) {
 
     customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
 
-    const filteredLib = filterGroup
-      ? exerciseLib.filter((e) => e.group === filterGroup)
-      : exerciseLib;
-
     customRoot.append(
       el("section", { class: "card" },
         el("h3", {}, "Add exercise"),
-        el("div", { class: "exercise-picker" },
-          el("div", { class: "field" },
-            el("label", {}, "Filter by muscle"),
-            el("select", {
-              onchange: (e) => { filterGroup = e.target.value; rerender(); },
-            },
-              el("option", { value: "" }, "All muscles"),
-              ...MUSCLE_GROUPS.map((g) =>
-                el("option", { value: g, selected: filterGroup === g ? "" : null }, g)),
-            ),
-          ),
-          el("div", { class: "field" },
-            el("label", {}, "Exercise"),
-            el("select", { id: "custom-exercise-select" },
-              el("option", { value: "" }, "— pick —"),
-              ...filteredLib.map((e) =>
-                el("option", { value: e.name },
-                  `${e.name}${e.equipment ? ` (${e.equipment})` : ""}`)),
-            ),
-          ),
-          el("button", {
-            class: "btn primary",
-            onclick: () => {
-              const sel = document.getElementById("custom-exercise-select");
-              const name = sel.value;
-              if (!name) return toast("Pick an exercise", "bad");
-              const lib = exerciseLib.find((e) => e.name === name);
+        el("button", {
+          class: "btn primary add-exercise-btn",
+          onclick: () => openExercisePicker({
+            exerciseLib,
+            exclude: exercises.map((e) => e.exercise),
+            onPick: ({ name, group }) => {
               if (exercises.some((e) => e.exercise === name)) return toast("Already added", "bad");
-              exercises.push({
-                exercise: name,
-                muscleGroup: lib?.group || "",
-                sets: [],
-              });
+              exercises.push({ exercise: name, muscleGroup: group || "", sets: [] });
               rerender();
             },
-          }, "+ Add"),
-        ),
+          }),
+        }, "+ Add exercise"),
       ),
     );
 
