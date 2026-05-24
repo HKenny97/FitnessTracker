@@ -492,15 +492,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     );
   }
 
-  // Live performance-vs-normal read, refreshed as sets are logged.
-  const perfSlot = el("div", { style: { marginBottom: "0.5rem" } });
-  block.append(perfSlot);
-  function refreshPerf() {
-    const node = perfPill(performanceReason(priorSets, logged));
-    perfSlot.replaceChildren();
-    if (node) perfSlot.append(node);
-  }
-
   const setsContainer = el("div", {});
   const drafts = [];
 
@@ -651,7 +642,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
         ),
       ),
     );
-    refreshPerf();
   }
 
   function addDraft() {
@@ -1013,8 +1003,7 @@ async function renderCustomMode(root, onFinish) {
       ),
     );
 
-    // Performance-vs-normal for custom mode: baseline from sessions before
-    // today, actual from today's already-logged (saved) sets.
+    // Est. 1RM + trend from sessions before today.
     const today = isoToday();
     const priorSets = allSets.filter((s) => s.exercise === ex.exercise && s.date < today);
     const priorBests = sessionBestE1RMs(priorSets);
@@ -1026,14 +1015,6 @@ async function renderCustomMode(root, onFinish) {
         el("div", { class: "muted small", style: { marginBottom: "0.5rem" } },
           `Est. 1RM ~${toDisplay(Math.round(estMax * 10) / 10)} ${unitLabel()}${arrow}`),
       );
-    }
-    const perfSlot = el("div", { style: { marginBottom: "0.5rem" } });
-    block.append(perfSlot);
-    function refreshPerf() {
-      const liveToday = ex.sets.filter((s) => s.saved).map((s) => ({ weight: +s.weight, reps: +s.reps }));
-      const node = perfPill(performanceReason(priorSets, liveToday));
-      perfSlot.replaceChildren();
-      if (node) perfSlot.append(node);
     }
 
     const setsContainer = el("div", {});
@@ -1202,7 +1183,6 @@ async function renderCustomMode(root, onFinish) {
           },
         }, "+ Add set"),
       );
-      refreshPerf();
     }
 
     if (!ex.sets.some((s) => !s.saved)) {
