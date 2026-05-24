@@ -27,6 +27,15 @@ function templateType(tpl) {
   return "Hybrid / Other";
 }
 
+// Training frequency (sessions per week). Prefer the canonical "(N-Day)" in the
+// name — for A/B programs (e.g. "Novice Linear Progression (3-Day A/B)") the
+// number of distinct day layouts (days.length) is fewer than the weekly
+// frequency. Fall back to days.length when the name has no day token.
+function templateDaysPerWeek(tpl) {
+  const m = tpl.name.match(/(\d+)\s*-\s*day/i);
+  return m ? +m[1] : tpl.days.length;
+}
+
 function buildExerciseInput(exerciseLib, ex, onSelect) {
   const wrapper = el("div", { class: "exercise-picker-wrap" });
   const input = el("input", {
@@ -217,7 +226,7 @@ export async function renderNew(container) {
     wrap.append(el("h1", {}, "New mesocycle"));
 
     // Template picker
-    const dayOptions = [...new Set(PROGRAM_TEMPLATES.map((t) => t.days.length))].sort((a, b) => a - b);
+    const dayOptions = [...new Set(PROGRAM_TEMPLATES.map((t) => templateDaysPerWeek(t)))].sort((a, b) => a - b);
     const typeOptions = TEMPLATE_TYPE_ORDER.filter((t) =>
       PROGRAM_TEMPLATES.some((tpl) => templateType(tpl) === t));
 
@@ -226,7 +235,7 @@ export async function renderNew(container) {
     function renderTemplateGrid() {
       grid.replaceChildren();
       const matches = PROGRAM_TEMPLATES.filter((tpl) =>
-        (!tplFilter.days || tpl.days.length === tplFilter.days) &&
+        (!tplFilter.days || templateDaysPerWeek(tpl) === tplFilter.days) &&
         (!tplFilter.type || templateType(tpl) === tplFilter.type));
       if (!matches.length) {
         grid.append(el("p", { class: "muted small" }, "No templates match those filters."));
@@ -236,7 +245,7 @@ export async function renderNew(container) {
         grid.append(
           el("button", { class: "btn template-btn", onclick: () => applyTemplate(tpl) },
             el("strong", {}, tpl.name),
-            el("span", { class: "muted small" }, `${tpl.days.length} days · ${templateType(tpl)}`),
+            el("span", { class: "muted small" }, `${templateDaysPerWeek(tpl)} days · ${templateType(tpl)}`),
           ),
         );
       }
