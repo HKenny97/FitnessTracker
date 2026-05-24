@@ -61,43 +61,43 @@ function buildExerciseInput(exerciseLib, ex, onSelect) {
   }, "Browse");
   wrapper.append(el("div", { class: "picker-input-row" }, input, browse), dropdown);
 
+  // The exercise currently assigned to this slot, captured before the user
+  // edits the box (typing overwrites ex.exercise). Used to surface this
+  // exercise's acceptable substitutes when swapping it out.
+  const original = ex.exercise;
+
   function search(query) {
     dropdown.replaceChildren();
     const q = query.toLowerCase().trim();
-    if (!q) { dropdown.classList.remove("open"); return; }
-
-    const nameMatches = exerciseLib.filter(
-      (e) => e.name.toLowerCase().includes(q),
-    );
+    // While the box still shows the slot's current exercise, treat the query
+    // as empty so we list all of its acceptable substitutes up front.
+    const fq = original && q === original.toLowerCase() ? "" : q;
 
     const currentGroup = ex.muscleGroup || null;
-    const subs = [];
-    for (const [name, subList] of Object.entries(EXERCISE_SUBSTITUTES)) {
-      if (name.toLowerCase().includes(q)) {
-        for (const s of subList) {
-          if (!nameMatches.some((m) => m.name === s)) subs.push(s);
-        }
-      }
-    }
-    const matched = nameMatches.find((m) => m.name.toLowerCase() === q);
-    if (matched) {
-      const directSubs = EXERCISE_SUBSTITUTES[matched.name] || [];
-      for (const s of directSubs) {
-        if (!subs.includes(s) && !nameMatches.some((m) => m.name === s)) subs.push(s);
-      }
-    }
-    const subExercises = subs
+
+    // Acceptable substitutes for the exercise in this slot, filtered by query.
+    const subNames = EXERCISE_SUBSTITUTES[original] || [];
+    const subSet = new Set(subNames);
+    const subMatches = subNames
       .map((s) => exerciseLib.find((e) => e.name === s))
       .filter(Boolean)
-      .slice(0, 10);
+      .filter((e) => !fq || e.name.toLowerCase().includes(fq));
 
-    const groupMatches = currentGroup
+    // Other exercises matching the typed query (only once something is typed).
+    const nameMatches = fq
+      ? exerciseLib.filter((e) => e.name.toLowerCase().includes(fq) && !subSet.has(e.name))
+      : [];
+
+    const groupMatches = fq && currentGroup
       ? exerciseLib
-          .filter((e) => e.group === currentGroup && !nameMatches.some((m) => m.name === e.name) && !subExercises.some((s) => s.name === e.name))
+          .filter((e) => e.group === currentGroup
+            && !subSet.has(e.name)
+            && e.name.toLowerCase().includes(fq)
+            && !nameMatches.some((m) => m.name === e.name))
           .slice(0, 8)
       : [];
 
-    if (!nameMatches.length && !subExercises.length && !groupMatches.length) {
+    if (!subMatches.length && !nameMatches.length && !groupMatches.length) {
       dropdown.classList.remove("open");
       return;
     }
@@ -120,8 +120,8 @@ function buildExerciseInput(exerciseLib, ex, onSelect) {
       }
     }
 
+    addSection(original ? `Substitutes for ${original}` : "Substitutes", subMatches.slice(0, 12));
     addSection("Matches", nameMatches.slice(0, 10));
-    addSection("Substitutes", subExercises);
     addSection(currentGroup || "Same group", groupMatches);
     dropdown.classList.add("open");
   }
@@ -130,7 +130,7 @@ function buildExerciseInput(exerciseLib, ex, onSelect) {
     ex.exercise = input.value;
     search(input.value);
   });
-  input.addEventListener("focus", () => { if (input.value) search(input.value); });
+  input.addEventListener("focus", () => search(input.value));
   input.addEventListener("blur", () => {
     setTimeout(() => dropdown.classList.remove("open"), 150);
   });
