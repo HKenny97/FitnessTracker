@@ -2,6 +2,8 @@ import { el, fmtDate, isoToday, run, toast, withLoading, stat } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
+import { config } from "../config.js";
+import { toDisplay, unitLabel } from "../units.js";
 
 function formatVolume(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -75,7 +77,7 @@ export async function render(container, { signedIn }) {
 
   // --- Inline body weight form ---
   const bwForm = el("div", { class: "bw-widget", style: { display: "none" } });
-  const bwState = { date: today, weight: "", unit: "lbs", notes: "" };
+  const bwState = { date: today, weight: "", unit: config.displayUnit === "kg" ? "kg" : "lbs", notes: "" };
   const bwSaveBtn = el("button", { class: "btn primary small" }, "Save");
   bwSaveBtn.onclick = withLoading(bwSaveBtn, async () => {
     if (!bwState.weight) return toast("Enter weight", "bad");
@@ -94,8 +96,8 @@ export async function render(container, { signedIn }) {
       el("div", { class: "field" },
         el("label", {}, "Unit"),
         el("select", { onchange: (e) => (bwState.unit = e.target.value) },
-          el("option", { value: "lbs" }, "lbs"),
-          el("option", { value: "kg" }, "kg"),
+          el("option", { value: "lbs", selected: bwState.unit === "lbs" ? "" : null }, "lbs"),
+          el("option", { value: "kg", selected: bwState.unit === "kg" ? "" : null }, "kg"),
         ),
       ),
       el("div", { class: "field" },
@@ -125,7 +127,7 @@ export async function render(container, { signedIn }) {
     const showSparklines = week >= 2;
 
     const weekVol = await data.weeklyVolume(activeMeso.id, week);
-    const plan = await data.getWeekPlan(activeMeso.id);
+    const plan = await data.getEffectiveWeekPlan(activeMeso.id);
     const planThisWeek = plan.filter((p) => p.week === week);
 
     // Pre-compute sparkline data per muscle group (sets per week across meso)
@@ -259,7 +261,7 @@ export async function render(container, { signedIn }) {
               el("span", { class: "activity-date" }, fmtDate(date)),
               el("span", { class: "muted small" }, `${setCount} sets`),
               totalVol > 0
-                ? el("span", { class: "muted small" }, `${totalVol.toLocaleString()} lbs`)
+                ? el("span", { class: "muted small" }, `${toDisplay(totalVol).toLocaleString()} ${unitLabel()}`)
                 : null,
             ),
             pills,
@@ -329,7 +331,7 @@ export async function render(container, { signedIn }) {
         el("div", { class: "card-row", style: { padding: "0.3rem 0", borderBottom: "1px solid var(--line)" } },
           el("div", {},
             el("strong", {}, pr.exercise),
-            el("span", { class: "muted small", style: { marginLeft: "0.5rem" } }, `${pr.weight} × ${pr.reps}`),
+            el("span", { class: "muted small", style: { marginLeft: "0.5rem" } }, `${toDisplay(pr.weight)} × ${pr.reps}`),
           ),
           el("div", {},
             el("span", { class: "pill pr-badge" }, pr.type === "weight" ? "Weight PR" : "e1RM PR"),
@@ -352,7 +354,7 @@ export async function render(container, { signedIn }) {
         el("h3", {}, "All-Time Stats"),
         el("div", { class: "summary-stats", style: { marginBottom: "0" } },
           stat(String(uniqueDates.size), "Total workouts"),
-          stat(formatVolume(totalVolume) + " lbs", "Total volume"),
+          stat(formatVolume(toDisplay(totalVolume)) + " " + unitLabel(), "Total volume"),
           stat(String(uniqueExercises.size), "Unique exercises"),
         ),
       ),

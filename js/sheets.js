@@ -99,6 +99,14 @@ const TABS = {
     title: "BodyWeight",
     headers: ["id", "date", "weight", "unit", "notes"],
   },
+  sessionFeedback: {
+    title: "SessionFeedback",
+    headers: ["id", "mesoId", "week", "dayIndex", "date", "muscleGroup", "pump", "soreness", "jointPain", "performance"],
+  },
+  weekPlanAdjustments: {
+    title: "WeekPlanAdjustments",
+    headers: ["id", "mesoId", "week", "muscleGroup", "deltaSets", "reason", "createdAt"],
+  },
 };
 
 export function getSpreadsheetId() {

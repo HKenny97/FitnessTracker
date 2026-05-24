@@ -5193,6 +5193,48 @@ export function distributeSets(totalSets, exerciseCount) {
   );
 }
 
+// Feedback-driven set-count adjustment for a muscle group's next session/week.
+// feedback fields pump/soreness/jointPain/performance are 0–3 (performance:
+// 0 worse … 3 better; defaults to "ok" when absent). Returns the recommended
+// change to apply on top of the planned target — see getEffectiveWeekPlan.
+//   { deltaSets, action: "add"|"hold"|"reduce"|"deload", reason }
+export function suggestSetAdjustment({ feedback = {}, performedSets = 0, targetSets = 0, landmark = {} } = {}) {
+  const pump = +feedback.pump || 0;
+  const soreness = +feedback.soreness || 0;
+  const jointPain = +feedback.jointPain || 0;
+  const performance = feedback.performance == null ? 2 : +feedback.performance;
+  const MRV = Number.isFinite(+landmark.MRV) ? +landmark.MRV : Infinity;
+  const MEV = +landmark.MEV || 0;
+
+  if (performedSets < targetSets / 2) {
+    return { deltaSets: 0, action: "hold", reason: "Not enough sets logged to judge — holding." };
+  }
+  if (jointPain >= 2) {
+    return { deltaSets: -1, action: "reduce", reason: "Joint pain reported — backing off a set." };
+  }
+  if (soreness >= 3) {
+    return { deltaSets: -1, action: "reduce", reason: "High soreness — reducing a set." };
+  }
+  if (targetSets >= MRV) {
+    const deloadTarget = Math.max(2, Math.round(MEV * 0.5));
+    return { deltaSets: Math.min(0, deloadTarget - targetSets), action: "deload", reason: "At MRV — time to deload." };
+  }
+  if (soreness >= 2) {
+    return { deltaSets: 0, action: "hold", reason: "Still sore — holding volume." };
+  }
+  if (soreness <= 1 && performance >= 2) {
+    const room = MRV - targetSets;
+    let delta = Math.min(pump <= 1 ? 2 : 1, room);
+    if (delta <= 0) return { deltaSets: 0, action: "hold", reason: "Approaching MRV — holding." };
+    return {
+      deltaSets: delta,
+      action: "add",
+      reason: pump <= 1 ? "Low pump (low stimulus) — adding volume." : "Recovered with good stimulus — adding a set.",
+    };
+  }
+  return { deltaSets: 0, action: "hold", reason: "On track — holding." };
+}
+
 // Estimated 1RM (Epley). Used for tiny progression suggestions only.
 export function epley1RM(weight, reps) {
   if (!weight || !reps) return 0;

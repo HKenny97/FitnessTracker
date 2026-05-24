@@ -31,10 +31,20 @@ export const config = {
 
   // Name of the spreadsheet the app creates the first time you sign in.
   defaultSheetName: "GamaTraining Data",
+
+  // Display unit for weights, "lb" or "kg". Weights are always STORED in lbs;
+  // this only controls display/input conversion.
+  displayUnit: localStorage.getItem("rp.displayUnit") === "kg" ? "kg" : "lb",
 };
 
 // Allow runtime override from the Settings page.
 export function setClientId(id) {
   localStorage.setItem("rp.clientId", id);
   config.googleClientId = id;
+}
+
+export function setDisplayUnit(unit) {
+  const u = unit === "kg" ? "kg" : "lb";
+  localStorage.setItem("rp.displayUnit", u);
+  config.displayUnit = u;
 }

@@ -3,6 +3,7 @@ import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { drawChart } from "../chart.js";
 import { epley1RM } from "../rp.js";
+import { toDisplay, fromDisplay, unitLabel } from "../units.js";
 
 export async function render(container) {
   const [sessionsSrc, setsSrc, allMesos, cardioEntries] = await Promise.all([
@@ -122,13 +123,14 @@ export async function render(container) {
 
       for (const s of exSets) {
         if (editingSetId === s.id) {
-          const ed = { weight: s.weight, reps: s.reps, rir: s.rir };
+          const ed = { weight: toDisplay(s.weight), reps: s.reps, rir: s.rir };
           const saveBtn = el("button", { class: "btn small primary" }, "Save");
           const cancelBtn = el("button", { class: "btn small" }, "Cancel");
           cancelBtn.onclick = () => { editingSetId = null; rerender(); };
           saveBtn.onclick = withLoading(saveBtn, async () => {
-            await run(data.updateSet(s.id, { weight: ed.weight, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
-            Object.assign(s, ed);
+            const weightLbs = fromDisplay(ed.weight);
+            await run(data.updateSet(s.id, { weight: weightLbs, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
+            Object.assign(s, { weight: weightLbs, reps: ed.reps, rir: ed.rir });
             editingSetId = null;
             rerender();
           });
@@ -144,7 +146,7 @@ export async function render(container) {
           exBlock.append(
             el("div", { class: "set-detail" },
               el("span", { class: "muted" }, `${s.setNumber}`),
-              el("span", {}, `${s.weight} × ${s.reps}`),
+              el("span", {}, `${toDisplay(s.weight)} × ${s.reps}`),
               el("span", { class: "muted" }, `${s.rir} RIR`),
               el("div", { class: "set-actions" },
                 el("button", { class: "btn small ghost", onclick: () => { editingSetId = s.id; rerender(); } }, "✏"),
@@ -165,7 +167,7 @@ export async function render(container) {
       if (prev) {
         exBlock.append(
           el("div", { class: "muted small", style: { marginTop: "0.2rem" } },
-            `Top: ${topSet.weight} × ${topSet.reps}  (prev ${prev.weight} × ${prev.reps})`),
+            `Top: ${toDisplay(topSet.weight)} × ${topSet.reps}  (prev ${toDisplay(prev.weight)} × ${prev.reps})`),
         );
       }
 
@@ -176,7 +178,7 @@ export async function render(container) {
     detail.append(
       el("div", { class: "volume-summary" },
         el("span", { class: "muted" }, "Total volume: "),
-        el("strong", {}, `${vol.toLocaleString()} lbs`),
+        el("strong", {}, `${toDisplay(vol).toLocaleString()} ${unitLabel()}`),
       ),
     );
 
@@ -496,24 +498,24 @@ export async function render(container) {
           if (!existing || +s.weight > +existing.weight) byDate.set(s.date, s);
         }
         const dates = [...byDate.keys()];
-        const points = dates.map((d, i) => ({ x: i, y: +byDate.get(d).weight }));
+        const points = dates.map((d, i) => ({ x: i, y: toDisplay(+byDate.get(d).weight) }));
         const labels = dates.map((d) => d.slice(5)); // MM-DD
 
         if (points.length > 1) {
           content.append(el("h3", {}, "Weight progression"));
           const canvas = el("canvas", { style: { width: "100%", height: "220px" } });
           content.append(el("div", { class: "chart-container" }, canvas));
-          requestAnimationFrame(() => drawChart(canvas, [{ label: selectedExercise, points }], { xLabels: labels, yLabel: "lbs" }));
+          requestAnimationFrame(() => drawChart(canvas, [{ label: selectedExercise, points }], { xLabels: labels, yLabel: unitLabel() }));
 
           // e1RM chart
           const e1rmPoints = dates.map((d, i) => {
             const s = byDate.get(d);
-            return { x: i, y: Math.round(epley1RM(+s.weight, +s.reps) * 10) / 10 };
+            return { x: i, y: toDisplay(Math.round(epley1RM(+s.weight, +s.reps) * 10) / 10) };
           });
           content.append(el("h3", { style: { marginTop: "1rem" } }, "Estimated 1RM"));
           const canvas2 = el("canvas", { style: { width: "100%", height: "220px" } });
           content.append(el("div", { class: "chart-container" }, canvas2));
-          requestAnimationFrame(() => drawChart(canvas2, [{ label: "e1RM", color: "#ffb547", points: e1rmPoints }], { xLabels: labels, yLabel: "lbs" }));
+          requestAnimationFrame(() => drawChart(canvas2, [{ label: "e1RM", color: "#ffb547", points: e1rmPoints }], { xLabels: labels, yLabel: unitLabel() }));
         } else {
           content.append(el("p", { class: "muted" }, "Need more sessions to show charts."));
         }

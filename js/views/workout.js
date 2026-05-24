@@ -1,11 +1,55 @@
 import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
-import { distributeSets } from "../rp.js";
+import { distributeSets, suggestSetAdjustment } from "../rp.js";
 import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight } from "../adaptive.js";
 import { parseSets } from "../parse-sets.js";
 import { resolveExerciseName } from "../exercise-match.js";
+import { config } from "../config.js";
+import { toDisplay, fromDisplay, unitLabel } from "../units.js";
+import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
+import { warmupSets } from "../warmup.js";
+
+// Bottom-sheet plate calculator. `initialDisplay` is a weight in the current
+// display unit. Reuses the picker overlay/sheet CSS.
+function openPlateModal(initialDisplay) {
+  const unit = config.displayUnit;
+  const bar = defaultBar(unit);
+  const overlay = el("div", { class: "picker-overlay" });
+  const close = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+  const input = el("input", { type: "number", inputmode: "decimal", step: "0.5", value: initialDisplay || "", style: { flex: "1" } });
+  const result = el("div", { style: { marginTop: "0.6rem" } });
+  function compute() {
+    result.replaceChildren();
+    const t = Number(input.value);
+    if (!Number.isFinite(t) || t <= 0) return;
+    const { perSide, leftover, loadable } = platesPerSide(t, bar, defaultPlates(unit));
+    if (!perSide.length) {
+      result.append(el("div", {}, `Just the bar (${bar} ${unit}).`));
+    } else {
+      result.append(el("div", {}, "Per side: " + perSide.map((p) => `${p.count}×${p.plate}`).join(", ")));
+    }
+    result.append(el("div", { class: "muted small" },
+      `Bar ${bar} ${unit}` + (leftover > 0 ? ` · loads to ${loadable} ${unit} (${leftover} ${unit}/side short)` : "")));
+  }
+  input.addEventListener("input", compute);
+
+  overlay.append(
+    el("div", { class: "picker-sheet" },
+      el("div", { class: "picker-head" },
+        el("strong", {}, `Plate calculator (${unit})`),
+        el("button", { type: "button", class: "btn icon", title: "Close", onclick: close }, "×"),
+      ),
+      el("div", { class: "row", style: { gap: "0.4rem" } }, input, el("span", { class: "muted" }, unit)),
+      result,
+    ),
+  );
+  document.body.append(overlay);
+  compute();
+}
 
 // Inline panel listing chunks the parser couldn't resolve, each an editable
 // row the user can fix and re-parse. Mutates the passed `errors` array in
@@ -182,11 +226,20 @@ async function renderMesoMode(root, active, onFinish) {
       ),
     );
 
+    const suggestionPanel = await buildSuggestionPanel();
+    if (suggestionPanel) mesoRoot.append(suggestionPanel);
+
     mesoRoot.append(buildSessionMetaForm(session, saveSessionMeta));
 
     const day = template.find((d) => d.index === chosenDay);
     if (!day) return;
     await renderSession(mesoRoot, active, chosenWeek, day);
+
+    // Post-session per-muscle feedback (drives next week's set suggestions).
+    const dayMuscles = [...new Set(day.exercises.map((e) => e.muscleGroup).filter(Boolean))];
+    const feedbackState = {};
+    for (const m of dayMuscles) feedbackState[m] = { pump: 1, soreness: 1, jointPain: 0, performance: 2 };
+    if (dayMuscles.length) mesoRoot.append(buildFeedbackCard(dayMuscles, feedbackState));
 
     const finishBtn = el("button", { class: "btn primary finish-btn" }, "Finish Workout");
     finishBtn.onclick = withLoading(finishBtn, async () => {
@@ -194,16 +247,108 @@ async function renderMesoMode(root, active, onFinish) {
         session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
       }
       await saveSessionMeta();
+      if (dayMuscles.length) {
+        await run(data.logSessionFeedback({
+          mesoId: active.id, week: chosenWeek, dayIndex: chosenDay, date: isoToday(),
+          feedback: dayMuscles.map((m) => ({ muscleGroup: m, ...feedbackState[m] })),
+        }), { ok: "Workout saved" });
+      }
       onFinish();
     });
     mesoRoot.append(finishBtn);
   }
 
+  // Per-muscle suggestion panel for the current week, from last week's feedback,
+  // logged volume, and landmarks. Only surfaces actionable (non-hold) changes
+  // not already accepted.
+  async function buildSuggestionPanel() {
+    if (chosenWeek < 2) return null;
+    const prevWeek = chosenWeek - 1;
+    const [feedback, landmarks, effPlan, prevVol, adjustments] = await Promise.all([
+      data.getSessionFeedback(active.id),
+      data.getLandmarks(),
+      data.getEffectiveWeekPlan(active.id),
+      data.weeklyVolume(active.id, prevWeek),
+      data.getWeekPlanAdjustments(active.id),
+    ]);
+    const acceptedThisWeek = new Set(adjustments.filter((a) => a.week === chosenWeek).map((a) => a.muscleGroup));
+    const planThis = effPlan.filter((p) => p.week === chosenWeek);
+    const items = [];
+    for (const p of planThis) {
+      if (acceptedThisWeek.has(p.muscleGroup)) continue;
+      const fb = feedback.filter((f) => f.week === prevWeek && f.muscleGroup === p.muscleGroup);
+      if (!fb.length) continue;
+      const avg = (k) => Math.round(fb.reduce((n, f) => n + (f[k] || 0), 0) / fb.length);
+      const perfVals = fb.map((f) => f.performance).filter((v) => v != null);
+      const feedbackAvg = {
+        pump: avg("pump"), soreness: avg("soreness"), jointPain: avg("jointPain"),
+        performance: perfVals.length ? Math.round(perfVals.reduce((a, b) => a + b, 0) / perfVals.length) : 2,
+      };
+      const prevTarget = effPlan.find((x) => x.week === prevWeek && x.muscleGroup === p.muscleGroup)?.targetSets ?? p.targetSets;
+      const sug = suggestSetAdjustment({
+        feedback: feedbackAvg,
+        performedSets: prevVol[p.muscleGroup] || 0,
+        targetSets: prevTarget,
+        landmark: landmarks[p.muscleGroup] || {},
+      });
+      if (sug.deltaSets === 0 && sug.action !== "deload") continue;
+      items.push({ muscleGroup: p.muscleGroup, ...sug });
+    }
+    if (!items.length) return null;
+
+    const card = el("section", { class: "card" },
+      el("h3", {}, "Adjust this week"),
+      el("p", { class: "muted small" }, "Based on last week's feedback. Your original plan is preserved."),
+    );
+    for (const it of items) {
+      const label = it.action === "deload" ? "Apply deload"
+        : it.deltaSets > 0 ? `Add ${it.deltaSets}` : `Reduce ${Math.abs(it.deltaSets)}`;
+      const acceptBtn = el("button", { class: "btn small primary" }, label);
+      acceptBtn.onclick = withLoading(acceptBtn, async () => {
+        await run(data.saveWeekPlanAdjustment({
+          mesoId: active.id, week: chosenWeek, muscleGroup: it.muscleGroup,
+          deltaSets: it.deltaSets, reason: it.reason,
+        }), { ok: "Adjusted" });
+        rerender();
+      });
+      card.append(
+        el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem" } },
+          el("div", {}, el("strong", {}, it.muscleGroup), el("div", { class: "muted small" }, it.reason)),
+          acceptBtn,
+        ),
+      );
+    }
+    return card;
+  }
+
   rerender();
 }
 
+// 0–3 per-muscle feedback inputs for the just-finished session.
+function buildFeedbackCard(muscles, state) {
+  const card = el("section", { class: "card" },
+    el("h3", {}, "Session feedback"),
+    el("p", { class: "muted small" }, "Rate each muscle 0–3 (pump, soreness, joint pain, performance) to tune next week."),
+  );
+  const sel = (m, key) => el("select", { onchange: (e) => (state[m][key] = +e.target.value) },
+    ...[0, 1, 2, 3].map((v) => el("option", { value: v, selected: state[m][key] === v ? "" : null }, String(v))),
+  );
+  for (const m of muscles) {
+    card.append(
+      el("div", { class: "field-row", style: { alignItems: "end", gap: "0.4rem", marginTop: "0.4rem" } },
+        el("div", { class: "field", style: { flex: "1" } }, el("label", {}, m)),
+        el("div", { class: "field" }, el("label", { class: "muted small" }, "Pump"), sel(m, "pump")),
+        el("div", { class: "field" }, el("label", { class: "muted small" }, "Sore"), sel(m, "soreness")),
+        el("div", { class: "field" }, el("label", { class: "muted small" }, "Joint"), sel(m, "jointPain")),
+        el("div", { class: "field" }, el("label", { class: "muted small" }, "Perf"), sel(m, "performance")),
+      ),
+    );
+  }
+  return card;
+}
+
 async function renderSession(container, meso, week, day) {
-  const plan = await data.getWeekPlan(meso.id);
+  const plan = await data.getEffectiveWeekPlan(meso.id);
   const weekPlan = plan.filter((p) => p.week === week);
 
   const byGroup = {};
@@ -287,8 +432,8 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
   if (prev) {
     block.append(
       el("div", { class: "muted small", style: { marginBottom: "0.5rem" } },
-        `Last session: ${prev.weight} × ${prev.reps} @ ${prev.rir} RIR`,
-        suggested ? ` · suggested ${suggested}` : "",
+        `Last session: ${toDisplay(prev.weight)} ${unitLabel()} × ${prev.reps} @ ${prev.rir} RIR`,
+        suggested ? ` · suggested ${toDisplay(suggested)} ${unitLabel()}` : "",
       ),
     );
   } else {
@@ -310,10 +455,14 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     style: { flex: "1" },
   });
   const errorsContainer = el("div", {});
+  // Draft weights are held in the user's DISPLAY unit; suggested/prev are
+  // stored lbs, so convert when seeding. The parser's numbers are already in
+  // display units (the user typed them) and are converted to lbs at save.
+  const suggestedDisplay = suggested ? toDisplay(suggested) : "";
   const pushDrafts = (sets) => {
     for (const set of sets) {
       drafts.push({
-        weight: set.weight != null ? String(set.weight) : (suggested || ""),
+        weight: set.weight != null ? String(set.weight) : (suggestedDisplay || ""),
         reps: set.reps != null ? String(set.reps) : "",
         rir: set.rir != null ? String(set.rir) : String(targetRIR),
       });
@@ -330,10 +479,20 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
   quickInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); applyQuick(); }
   });
+  function addWarmup() {
+    const base = suggested || prev?.weight || (drafts[0] && fromDisplay(drafts[0].weight));
+    if (!base) return toast("Set a working weight first", "bad");
+    const ramp = warmupSets(toDisplay(base), config.displayUnit);
+    if (!ramp.length) return toast("Working weight too light for warm-ups", "bad");
+    for (const s of ramp) drafts.push({ weight: String(s.weight), reps: String(s.reps), rir: "" });
+    renderSets();
+  }
   block.append(
     el("div", { class: "row", style: { gap: "0.4rem", marginBottom: "0.5rem" } },
       quickInput,
       el("button", { class: "btn small", onclick: applyQuick }, "Parse"),
+      el("button", { type: "button", class: "btn small ghost", title: "Add warm-up sets", onclick: addWarmup }, "Warm-up"),
+      el("button", { type: "button", class: "btn small ghost", title: "Plate calculator", onclick: () => openPlateModal(suggestedDisplay) }, "Plates"),
     ),
     errorsContainer,
     setsContainer,
@@ -344,7 +503,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     setsContainer.append(
       el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
         el("div", {}, "#"),
-        el("div", {}, "Weight"),
+        el("div", {}, `Weight (${unitLabel()})`),
         el("div", {}, "Reps"),
         el("div", {}, "RIR"),
         el("div", {}, ""),
@@ -353,13 +512,14 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
 
     logged.forEach((s, i) => {
       if (editingSetId === s.id) {
-        const ed = { weight: s.weight, reps: s.reps, rir: s.rir };
+        const ed = { weight: toDisplay(s.weight), reps: s.reps, rir: s.rir };
         const saveBtn = el("button", { class: "btn small primary" }, "Save");
         const cancelBtn = el("button", { class: "btn small" }, "Cancel");
         cancelBtn.onclick = () => { editingSetId = null; renderSets(); };
         saveBtn.onclick = withLoading(saveBtn, async () => {
-          await run(data.updateSet(s.id, { weight: ed.weight, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
-          s.weight = ed.weight; s.reps = ed.reps; s.rir = ed.rir;
+          const weightLbs = fromDisplay(ed.weight);
+          await run(data.updateSet(s.id, { weight: weightLbs, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
+          s.weight = weightLbs; s.reps = ed.reps; s.rir = ed.rir;
           editingSetId = null;
           renderSets();
         });
@@ -376,7 +536,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
         setsContainer.append(
           el("div", { class: "set-row set-done" },
             el("div", { class: "idx" }, i + 1),
-            el("div", {}, s.weight),
+            el("div", {}, toDisplay(s.weight)),
             el("div", {}, s.reps),
             el("div", {}, s.rir),
             el("div", { class: "set-actions" },
@@ -403,7 +563,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
           el("div", { class: "idx" }, setNo),
           el("input", {
             type: "number", inputmode: "decimal", step: "0.5",
-            placeholder: suggested || "wt",
+            placeholder: suggestedDisplay || "wt",
             value: d.weight,
             oninput: (e) => (d.weight = e.target.value),
           }),
@@ -437,7 +597,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
 
   function addDraft() {
     drafts.push({
-      weight: suggested || prev?.weight || "",
+      weight: suggestedDisplay || (prev?.weight ? toDisplay(prev.weight) : "") || "",
       reps: prev?.reps || "",
       rir: targetRIR,
     });
@@ -455,7 +615,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
         exercise: ex.exercise,
         muscleGroup: ex.muscleGroup,
         setNumber: logged.length + idx + 1,
-        weight: +d.weight,
+        weight: fromDisplay(d.weight),
         reps: +d.reps,
         rir: +d.rir,
         date: isoToday(),
@@ -681,6 +841,10 @@ async function renderCustomMode(root, onFinish) {
     const pushBlock = (sets) => {
       for (const set of sets) ex.sets.push(toUnsaved(set));
     };
+    const lastSavedWeightLbs = () => {
+      const last = ex.sets.filter((s) => s.saved).pop();
+      return last ? +last.weight : null;
+    };
     function applyBlockQuick() {
       const res = parseSets(blockQuick.value);
       if (!res.sets.length && !res.errors.length) return toast("Nothing to parse", "bad");
@@ -692,10 +856,20 @@ async function renderCustomMode(root, onFinish) {
     blockQuick.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); applyBlockQuick(); }
     });
+    function addBlockWarmup() {
+      const base = lastSavedWeightLbs();
+      if (!base) return toast("Log a working set first", "bad");
+      const ramp = warmupSets(toDisplay(base), config.displayUnit);
+      if (!ramp.length) return toast("Working weight too light for warm-ups", "bad");
+      for (const s of ramp) ex.sets.push({ weight: String(s.weight), reps: String(s.reps), rir: "", saved: false });
+      renderSets();
+    }
     block.append(
       el("div", { class: "row", style: { gap: "0.4rem", marginBottom: "0.5rem" } },
         blockQuick,
         el("button", { class: "btn small", onclick: applyBlockQuick }, "Parse"),
+        el("button", { type: "button", class: "btn small ghost", title: "Add warm-up sets", onclick: addBlockWarmup }, "Warm-up"),
+        el("button", { type: "button", class: "btn small ghost", title: "Plate calculator", onclick: () => openPlateModal(lastSavedWeightLbs() ? toDisplay(lastSavedWeightLbs()) : "") }, "Plates"),
       ),
       blockErrors,
       setsContainer,
@@ -706,7 +880,7 @@ async function renderCustomMode(root, onFinish) {
       setsContainer.append(
         el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
           el("div", {}, "#"),
-          el("div", {}, "Weight"),
+          el("div", {}, `Weight (${unitLabel()})`),
           el("div", {}, "Reps"),
           el("div", {}, "RIR"),
           el("div", {}, ""),
@@ -715,13 +889,14 @@ async function renderCustomMode(root, onFinish) {
 
       ex.sets.forEach((s, i) => {
         if (s.saved && editingSetId === s.id) {
-          const ed = { weight: s.weight, reps: s.reps, rir: s.rir };
+          const ed = { weight: toDisplay(s.weight), reps: s.reps, rir: s.rir };
           const saveBtn = el("button", { class: "btn small primary" }, "Save");
           const cancelBtn = el("button", { class: "btn small" }, "Cancel");
           cancelBtn.onclick = () => { editingSetId = null; renderSets(); };
           saveBtn.onclick = withLoading(saveBtn, async () => {
-            await run(data.updateSet(s.id, { weight: ed.weight, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
-            s.weight = ed.weight; s.reps = ed.reps; s.rir = ed.rir;
+            const weightLbs = fromDisplay(ed.weight);
+            await run(data.updateSet(s.id, { weight: weightLbs, reps: ed.reps, rir: ed.rir }), { ok: "Updated" });
+            s.weight = weightLbs; s.reps = ed.reps; s.rir = ed.rir;
             editingSetId = null;
             renderSets();
           });
@@ -738,7 +913,7 @@ async function renderCustomMode(root, onFinish) {
           setsContainer.append(
             el("div", { class: "set-row set-done" },
               el("div", { class: "idx" }, i + 1),
-              el("div", {}, s.weight),
+              el("div", {}, toDisplay(s.weight)),
               el("div", {}, s.reps),
               el("div", {}, s.rir),
               el("div", { class: "set-actions" },
@@ -765,7 +940,7 @@ async function renderCustomMode(root, onFinish) {
                 exercise: ex.exercise,
                 muscleGroup: ex.muscleGroup,
                 setNumber: i + 1,
-                weight: +s.weight,
+                weight: fromDisplay(s.weight),
                 reps: +s.reps,
                 rir: +(s.rir || 0),
                 date: isoToday(),
@@ -773,6 +948,7 @@ async function renderCustomMode(root, onFinish) {
               { ok: "Set logged" },
             );
             s.id = saved.id;
+            s.weight = fromDisplay(s.weight);
             s.saved = true;
             renderSets();
           });
@@ -806,7 +982,7 @@ async function renderCustomMode(root, onFinish) {
           onclick: () => {
             const prev = ex.sets.filter((s) => s.saved).pop();
             ex.sets.push({
-              weight: prev?.weight || "",
+              weight: prev ? String(toDisplay(prev.weight)) : "",
               reps: prev?.reps || "",
               rir: prev?.rir || "",
               saved: false,
@@ -929,7 +1105,7 @@ async function renderSummary(container, mesoId, onBack) {
   if (durationStr) statsRow.append(stat(durationStr, "Duration"));
   statsRow.append(stat(String(todaySets.length), "Sets"));
   statsRow.append(stat(String(byExercise.size), "Exercises"));
-  statsRow.append(stat(totalVolume.toLocaleString(), "Volume (lbs)"));
+  statsRow.append(stat(toDisplay(totalVolume).toLocaleString(), `Volume (${unitLabel()})`));
   summary.append(statsRow);
 
   // Volume comparison
@@ -939,7 +1115,7 @@ async function renderSummary(container, mesoId, onBack) {
     const cls = volDelta > 0 ? "delta-up" : volDelta < 0 ? "delta-down" : "delta-same";
     summary.append(
       el("div", { class: `comparison ${cls}`, style: { textAlign: "center", marginBottom: "0.5rem" } },
-        `${volDelta > 0 ? "+" : ""}${volDelta.toLocaleString()} lbs (${volDelta > 0 ? "+" : ""}${volPct}%) vs last session`,
+        `${volDelta > 0 ? "+" : ""}${toDisplay(volDelta).toLocaleString()} ${unitLabel()} (${volDelta > 0 ? "+" : ""}${volPct}%) vs last session`,
       ),
     );
   }
@@ -959,8 +1135,8 @@ async function renderSummary(container, mesoId, onBack) {
     if (h.comparison) {
       const { wDelta, rDelta } = h.comparison;
       let text, cls;
-      if (wDelta > 0) { text = `+${wDelta}`; cls = "delta-up"; }
-      else if (wDelta < 0) { text = `${wDelta}`; cls = "delta-down"; }
+      if (wDelta > 0) { text = `+${toDisplay(wDelta)} ${unitLabel()}`; cls = "delta-up"; }
+      else if (wDelta < 0) { text = `${toDisplay(wDelta)} ${unitLabel()}`; cls = "delta-down"; }
       else if (rDelta > 0) { text = `+${rDelta} reps`; cls = "delta-up"; }
       else if (rDelta < 0) { text = `${rDelta} reps`; cls = "delta-down"; }
       else { text = "="; cls = "delta-same"; }
@@ -974,8 +1150,8 @@ async function renderSummary(container, mesoId, onBack) {
           deltaNode,
         ),
         el("div", { class: "muted small" },
-          `${h.sets} sets · Top: ${h.topWeight} × ${h.topReps}`,
-          h.comparison ? ` (was ${h.comparison.prevWeight} × ${h.comparison.prevReps})` : " (new)",
+          `${h.sets} sets · Top: ${toDisplay(h.topWeight)} × ${h.topReps}`,
+          h.comparison ? ` (was ${toDisplay(h.comparison.prevWeight)} × ${h.comparison.prevReps})` : " (new)",
         ),
       ),
     );

@@ -502,7 +502,7 @@ export async function renderDetail(container, id) {
   }
   const [template, plan, landmarks] = await Promise.all([
     data.getTemplate(id),
-    data.getWeekPlan(id),
+    data.getEffectiveWeekPlan(id),
     data.getLandmarks(),
   ]);
 

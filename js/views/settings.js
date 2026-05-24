@@ -1,11 +1,32 @@
 import { el, run, toast, withLoading, confirmModal } from "../ui.js";
-import { config, setClientId } from "../config.js";
+import { config, setClientId, setDisplayUnit } from "../config.js";
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
 
 export async function render(container) {
   container.append(el("h1", {}, "Settings"));
+
+  // Preferences.
+  const unitBtn = (unit, label) => el("button", {
+    class: "btn" + (config.displayUnit === unit ? " primary" : ""),
+    onclick: () => {
+      if (config.displayUnit === unit) return;
+      setDisplayUnit(unit);
+      toast("Units updated — reloading…", "ok");
+      setTimeout(() => location.reload(), 400);
+    },
+  }, label);
+  container.append(
+    el("section", { class: "card" },
+      el("h2", {}, "Preferences"),
+      el("div", { class: "field" },
+        el("label", {}, "Weight units"),
+        el("p", { class: "muted small" }, "Weights are stored in pounds; this changes display and entry only."),
+        el("div", { class: "row", style: { gap: "0.4rem" } }, unitBtn("lb", "Pounds (lb)"), unitBtn("kg", "Kilograms (kg)")),
+      ),
+    ),
+  );
 
   // Google client ID.
   container.append(

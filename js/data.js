@@ -191,6 +191,75 @@ export async function getWeekPlan(mesoId) {
     }));
 }
 
+// ── RP autoregulation: per-session feedback + weekly set-target overlay ──
+
+// feedback: [{ muscleGroup, pump, soreness, jointPain, performance }] (0–3).
+export async function logSessionFeedback({ mesoId, week, dayIndex, date, feedback }) {
+  const rows = (feedback || [])
+    .filter((f) => f && f.muscleGroup)
+    .map((f) => ({
+      id: newId(),
+      mesoId, week, dayIndex, date: date || isoToday(),
+      muscleGroup: f.muscleGroup,
+      pump: f.pump ?? "",
+      soreness: f.soreness ?? "",
+      jointPain: f.jointPain ?? "",
+      performance: f.performance ?? "",
+    }));
+  if (!rows.length) return;
+  await sheets.appendRows("sessionFeedback", rows);
+  invalidate("sessionFeedback");
+}
+
+export async function getSessionFeedback(mesoId) {
+  const rows = await cached("sessionFeedback", () => sheets.readAll("sessionFeedback"));
+  return rows
+    .filter((r) => r.mesoId === mesoId)
+    .map((r) => ({
+      week: +r.week,
+      dayIndex: +r.dayIndex,
+      date: r.date,
+      muscleGroup: r.muscleGroup,
+      pump: +r.pump || 0,
+      soreness: +r.soreness || 0,
+      jointPain: +r.jointPain || 0,
+      performance: r.performance === "" ? null : +r.performance,
+    }));
+}
+
+const adjustmentId = (mesoId, week, muscleGroup) => `${mesoId}|${week}|${muscleGroup}`;
+
+export async function getWeekPlanAdjustments(mesoId) {
+  const rows = await cached("weekPlanAdjustments", () => sheets.readAll("weekPlanAdjustments"));
+  return rows
+    .filter((r) => r.mesoId === mesoId)
+    .map((r) => ({ week: +r.week, muscleGroup: r.muscleGroup, deltaSets: +r.deltaSets || 0, reason: r.reason }));
+}
+
+export async function saveWeekPlanAdjustment({ mesoId, week, muscleGroup, deltaSets, reason }) {
+  await sheets.upsertRow("weekPlanAdjustments", "id", {
+    id: adjustmentId(mesoId, week, muscleGroup),
+    mesoId, week, muscleGroup,
+    deltaSets, reason: reason || "",
+    createdAt: new Date().toISOString(),
+  });
+  invalidate("weekPlanAdjustments");
+}
+
+// Week plan with accepted adjustments folded into targetSets (clamped >= 0).
+// Single seam used by the workout view, dashboard, and meso preview.
+export async function getEffectiveWeekPlan(mesoId) {
+  const [plan, adjustments] = await Promise.all([
+    getWeekPlan(mesoId),
+    getWeekPlanAdjustments(mesoId),
+  ]);
+  const delta = new Map(adjustments.map((a) => [`${a.week}|${a.muscleGroup}`, a.deltaSets]));
+  return plan.map((p) => {
+    const d = delta.get(`${p.week}|${p.muscleGroup}`) || 0;
+    return d ? { ...p, targetSets: Math.max(0, p.targetSets + d), adjusted: d } : p;
+  });
+}
+
 // Sets.
 export async function listSets() {
   return cached("sets", () => sheets.readAll("sets"));
@@ -564,7 +633,7 @@ export async function getRecentPRs(limit = 5) {
 // ── Data export ──
 
 export async function exportAllData() {
-  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "bodyWeight", "landmarks"];
+  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "bodyWeight", "landmarks", "sessionFeedback", "weekPlanAdjustments"];
   const result = {};
   await Promise.all(keys.map(async (k) => { result[k] = await sheets.readAll(k); }));
   return result;
