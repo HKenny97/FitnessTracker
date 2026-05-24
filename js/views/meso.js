@@ -36,6 +36,14 @@ function templateDaysPerWeek(tpl) {
   return m ? +m[1] : tpl.days.length;
 }
 
+// Case/whitespace-insensitive substitute lookup, built once from the static
+// table. Slot names are free text and the table keys are display-cased, so we
+// normalize on both sides rather than rely on exact string equality.
+const normalizeName = (s) => (s || "").trim().toLowerCase();
+const SUBSTITUTES_BY_KEY = new Map(
+  Object.entries(EXERCISE_SUBSTITUTES).map(([name, subs]) => [normalizeName(name), subs]),
+);
+
 function buildExerciseInput(exerciseLib, ex, onSelect) {
   const wrapper = el("div", { class: "exercise-picker-wrap" });
   const input = el("input", {
@@ -63,36 +71,46 @@ function buildExerciseInput(exerciseLib, ex, onSelect) {
 
   // The exercise currently assigned to this slot, captured before the user
   // edits the box (typing overwrites ex.exercise). Used to surface this
-  // exercise's acceptable substitutes when swapping it out.
+  // exercise's acceptable substitutes when swapping it out. After a pick the
+  // caller rerenders, so this is recaptured fresh for the newly chosen one.
   const original = ex.exercise;
+  const originalKey = normalizeName(original);
+  // Case-insensitive index of the library by name, so substitute resolution
+  // and matches survive casing/whitespace drift between table and library.
+  const libByName = new Map(exerciseLib.map((e) => [normalizeName(e.name), e]));
+  // Flips true once the user edits the box. Until then we behave as if the
+  // query were empty and surface the slot's substitutes up front.
+  let touched = false;
 
   function search(query) {
     dropdown.replaceChildren();
-    const q = query.toLowerCase().trim();
-    // While the box still shows the slot's current exercise, treat the query
-    // as empty so we list all of its acceptable substitutes up front.
-    const fq = original && q === original.toLowerCase() ? "" : q;
+    const fq = touched ? normalizeName(query) : "";
 
     const currentGroup = ex.muscleGroup || null;
 
-    // Acceptable substitutes for the exercise in this slot, filtered by query.
-    const subNames = EXERCISE_SUBSTITUTES[original] || [];
-    const subSet = new Set(subNames);
+    // Acceptable substitutes for the exercise in this slot, resolved against
+    // the library case-insensitively and filtered by the typed query.
+    const subNames = SUBSTITUTES_BY_KEY.get(originalKey) || [];
+    const subSet = new Set(subNames.map(normalizeName));
     const subMatches = subNames
-      .map((s) => exerciseLib.find((e) => e.name === s))
+      .map((s) => libByName.get(normalizeName(s)))
       .filter(Boolean)
-      .filter((e) => !fq || e.name.toLowerCase().includes(fq));
+      .filter((e) => !fq || normalizeName(e.name).includes(fq));
 
     // Other exercises matching the typed query (only once something is typed).
     const nameMatches = fq
-      ? exerciseLib.filter((e) => e.name.toLowerCase().includes(fq) && !subSet.has(e.name))
+      ? exerciseLib.filter((e) => normalizeName(e.name).includes(fq) && !subSet.has(normalizeName(e.name)))
       : [];
 
-    const groupMatches = fq && currentGroup
+    // Same-group suggestions: while typing, and on focus when the slot has no
+    // substitute entry to fall back on (e.g. a free-text exercise name).
+    const showGroup = currentGroup && (fq || (!touched && !subMatches.length));
+    const groupMatches = showGroup
       ? exerciseLib
           .filter((e) => e.group === currentGroup
-            && !subSet.has(e.name)
-            && e.name.toLowerCase().includes(fq)
+            && normalizeName(e.name) !== originalKey
+            && !subSet.has(normalizeName(e.name))
+            && (!fq || normalizeName(e.name).includes(fq))
             && !nameMatches.some((m) => m.name === e.name))
           .slice(0, 8)
       : [];
@@ -127,6 +145,7 @@ function buildExerciseInput(exerciseLib, ex, onSelect) {
   }
 
   input.addEventListener("input", () => {
+    touched = true;
     ex.exercise = input.value;
     search(input.value);
   });

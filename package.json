@@ -1,0 +1,8 @@
+{
+  "name": "fitnesstracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:substitutes": "node tools/check-substitutes.mjs"
+  }
+}
