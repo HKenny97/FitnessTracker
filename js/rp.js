@@ -23,6 +23,19 @@ export const MUSCLE_GROUPS = [
   "Abductors",
 ];
 
+// Body regions for the exercise picker's two-step muscle filter. Each region
+// maps to its member MUSCLE_GROUPS; every group belongs to exactly one region
+// (guarded by tools/check-regions.mjs). Order is the display order.
+export const MUSCLE_REGIONS = {
+  Legs: ["Quads", "Hamstrings", "Glutes", "Calves", "Adductors", "Abductors"],
+  Chest: ["Chest"],
+  Back: ["Back", "Traps"],
+  Shoulders: ["Shoulders (side delts)", "Shoulders (rear delts)", "Shoulders (front delts)"],
+  Arms: ["Biceps", "Triceps", "Forearms"],
+  Core: ["Abs"],
+  Neck: ["Neck"],
+};
+
 // MV = Maintenance Volume, MEV = Minimum Effective Volume,
 // MAV = Maximum Adaptive Volume (range), MRV = Maximum Recoverable Volume.
 // All values are weekly working sets, RP defaults for an intermediate lifter.

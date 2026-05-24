@@ -1,5 +1,5 @@
 import { el } from "./ui.js";
-import { EQUIPMENT_TYPES, MUSCLE_GROUPS } from "./rp.js";
+import { EQUIPMENT_TYPES, MUSCLE_REGIONS } from "./rp.js";
 
 function titleCase(s) {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -10,7 +10,7 @@ function titleCase(s) {
 // { name, group, equipment } and the sheet closes.
 export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
   const excludeSet = new Set(exclude);
-  const state = { q: "", equipment: "", group: "" };
+  const state = { q: "", equipment: "", region: "", group: "" };
 
   const overlay = el("div", { class: "picker-overlay" });
   const close = () => overlay.remove();
@@ -27,7 +27,7 @@ export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
   const count = el("div", { class: "picker-count" });
   const list = el("div", { class: "picker-list" });
 
-  function chipRow(values, key) {
+  function chipRow(values, key, onChange) {
     const row = el("div", { class: "chip-row" });
     for (const v of values) {
       const chip = el("button", {
@@ -38,6 +38,7 @@ export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
           for (const c of row.children) {
             c.classList.toggle("active", c.dataset.value === state[key] && !!state[key]);
           }
+          if (onChange) onChange();
           renderList();
         },
       }, titleCase(v));
@@ -47,12 +48,27 @@ export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
     return row;
   }
 
+  // Sub-row of muscles for the selected region; empty until a region is picked.
+  const muscleRow = el("div", {});
+  function rebuildMuscleRow() {
+    muscleRow.replaceChildren();
+    if (!state.region) return;
+    muscleRow.append(
+      el("div", { class: "picker-filter-label" }, "Muscle"),
+      chipRow(MUSCLE_REGIONS[state.region], "group"),
+    );
+  }
+
   function renderList() {
     const q = state.q.toLowerCase().trim();
     const matches = exerciseLib.filter((e) => {
       if (excludeSet.has(e.name)) return false;
       if (state.equipment && e.equipment !== state.equipment) return false;
-      if (state.group && e.group !== state.group) return false;
+      if (state.group) {
+        if (e.group !== state.group) return false;
+      } else if (state.region && !MUSCLE_REGIONS[state.region].includes(e.group)) {
+        return false;
+      }
       if (q && !e.name.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -81,10 +97,11 @@ export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
       el("button", { type: "button", class: "btn icon", title: "Close", onclick: close }, "×"),
     ),
     search,
+    el("div", { class: "picker-filter-label" }, "Region"),
+    chipRow(Object.keys(MUSCLE_REGIONS), "region", () => { state.group = ""; rebuildMuscleRow(); }),
+    muscleRow,
     el("div", { class: "picker-filter-label" }, "Equipment"),
     chipRow(EQUIPMENT_TYPES, "equipment"),
-    el("div", { class: "picker-filter-label" }, "Muscle"),
-    chipRow(MUSCLE_GROUPS, "group"),
     count,
     list,
   );
