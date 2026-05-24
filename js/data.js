@@ -36,6 +36,7 @@ export async function getLandmarks() {
       const seed = MUSCLE_GROUPS.map((g) => ({
         muscleGroup: g,
         ...DEFAULT_LANDMARKS[g],
+        auto: true,
       }));
       await sheets.appendRows("landmarks", seed);
       rows = seed;
@@ -48,6 +49,9 @@ export async function getLandmarks() {
         MAV_lo: +r.MAV_lo || 0,
         MAV_hi: +r.MAV_hi || 0,
         MRV: +r.MRV || 0,
+        // Missing/blank `auto` (rows written before this column existed) means
+        // auto-calibration is on by default.
+        auto: r.auto === undefined || r.auto === "" || String(r.auto).toUpperCase() === "TRUE",
       };
     }
     return map;
@@ -60,6 +64,46 @@ export async function saveLandmark(muscleGroup, values) {
     ...values,
   });
   invalidate("landmarks");
+}
+
+// Overwrite the whole landmark table in one write (used when generating a full
+// set from a profile). `map` is keyed by muscle group; `auto` defaults to true.
+export async function replaceLandmarks(map) {
+  const rows = MUSCLE_GROUPS.map((g) => ({
+    muscleGroup: g,
+    ...map[g],
+    auto: map[g]?.auto ?? true,
+  }));
+  await sheets.replaceAll("landmarks", rows);
+  invalidate("landmarks");
+}
+
+// Generic key/value access over the Meta tab.
+export async function getMeta(key) {
+  const rows = await cached("meta", () => sheets.readAll("meta"));
+  const row = rows.find((r) => r.key === key);
+  return row ? row.value : null;
+}
+
+export async function setMeta(key, value) {
+  await sheets.upsertRow("meta", "key", { key, value: String(value) });
+  invalidate("meta");
+}
+
+// Lifter profile (experience level, sex, bodyweight) stored as a single JSON
+// blob in the Meta key/value tab. Used to generate starting volume landmarks.
+export async function getProfile() {
+  const raw = await getMeta("profile");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveProfile(profile) {
+  await setMeta("profile", JSON.stringify(profile));
 }
 
 // Mesocycles.

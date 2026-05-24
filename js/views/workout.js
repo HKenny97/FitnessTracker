@@ -434,6 +434,17 @@ async function renderCustomMode(root, onFinish) {
     });
   }
 
+  // A workout assembled on the dashboard (modules/suggestions) hands off its
+  // exercise list here. Pre-populate any not already present, then consume it.
+  try {
+    const pending = JSON.parse(localStorage.getItem("gama.pendingWorkout") || "[]");
+    for (const p of pending) {
+      if (!p?.exercise || exercises.some((e) => e.exercise === p.exercise)) continue;
+      exercises.push({ exercise: p.exercise, muscleGroup: p.muscleGroup || "", sets: [] });
+    }
+  } catch { /* ignore malformed handoff */ }
+  localStorage.removeItem("gama.pendingWorkout");
+
   const session = defaultSessionState();
 
   // Restore existing session metadata for today's custom workout.

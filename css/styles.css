@@ -1033,6 +1033,16 @@ input[type="number"] {
 /* Sparkline canvas in meso table */
 .sparkline-cell canvas { width: 80px; height: 24px; }
 
+/* Monthly muscle-growth trend rows (label · sparkline · trend · totals) */
+.growth-trend-row {
+  display: grid;
+  grid-template-columns: 130px 90px 24px 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
 @media (max-width: 540px) {
   .topbar { grid-template-columns: 1fr auto; gap: 0.5rem; padding: 0.4rem 0.6rem; }
   .topbar .tabs { grid-column: 1 / -1; order: 3; padding-top: 0.25rem; }

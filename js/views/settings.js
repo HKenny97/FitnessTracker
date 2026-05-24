@@ -3,6 +3,7 @@ import { config, setClientId } from "../config.js";
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
+import { generateLandmarks } from "../standards.js";
 
 export async function render(container) {
   container.append(el("h1", {}, "Settings"));
@@ -107,12 +108,30 @@ export async function render(container) {
 
   // Volume landmarks editor.
   if (sheetId) {
+    const profile = await data.getProfile();
     const landmarks = await data.getLandmarks();
     const card = el("section", { class: "card" },
       el("h2", {}, "Volume landmarks"),
       el("p", { class: "muted small" },
-        "Weekly working sets per muscle group. Defaults are pre-filled — adjust as you learn your own MEV and MRV."),
+        "Weekly working sets per muscle group. Auto muscles are generated from your " +
+        "profile and self-adjust as you train. Switch a muscle to Manual to set your own."),
     );
+
+    const regenBtn = el("button", { class: "btn small", style: { marginBottom: "0.75rem" } }, "Regenerate Auto from profile");
+    regenBtn.onclick = withLoading(regenBtn, async () => {
+      const gen = generateLandmarks(profile || {});
+      const merged = {};
+      for (const g of MUSCLE_GROUPS) {
+        merged[g] = landmarks[g]?.auto === false
+          ? { ...landmarks[g] }
+          : { ...gen[g], auto: true };
+      }
+      await run(data.replaceLandmarks(merged), { ok: "Auto targets regenerated" });
+      Object.assign(landmarks, merged);
+      renderRows();
+    });
+    card.append(regenBtn);
+
     const table = el("table", { class: "meso-grid" });
     table.append(
       el("thead", {},
@@ -120,39 +139,71 @@ export async function render(container) {
           el("th", { style: { textAlign: "left" } }, "Muscle"),
           el("th", {}, "MV"), el("th", {}, "MEV"),
           el("th", {}, "MAV lo"), el("th", {}, "MAV hi"),
-          el("th", {}, "MRV"), el("th", {}),
+          el("th", {}, "MRV"), el("th", {}, "Mode"), el("th", {}),
         ),
       ),
     );
     const body = el("tbody", {});
     table.append(body);
-    for (const g of MUSCLE_GROUPS) {
-      const lm = landmarks[g] || { MV: 0, MEV: 0, MAV_lo: 0, MAV_hi: 0, MRV: 0 };
-      const row = el("tr", {});
-      row.append(el("td", { class: "muscle" }, g));
-      const fields = {};
-      for (const k of ["MV", "MEV", "MAV_lo", "MAV_hi", "MRV"]) {
-        const inp = el("input", { type: "number", value: lm[k], min: 0, style: { width: "70px" } });
-        fields[k] = inp;
-        row.append(el("td", {}, inp));
+
+    function renderRows() {
+      body.replaceChildren();
+      for (const g of MUSCLE_GROUPS) {
+        const lm = landmarks[g] || { MV: 0, MEV: 0, MAV_lo: 0, MAV_hi: 0, MRV: 0, auto: true };
+        const isAuto = lm.auto !== false;
+        const row = el("tr", {});
+        row.append(el("td", { class: "muscle" }, g));
+        const fields = {};
+        for (const k of ["MV", "MEV", "MAV_lo", "MAV_hi", "MRV"]) {
+          const inp = el("input", {
+            type: "number", value: lm[k], min: 0, style: { width: "70px" },
+            disabled: isAuto ? "" : null,
+          });
+          fields[k] = inp;
+          row.append(el("td", {}, inp));
+        }
+
+        const modeBtn = el("button", { class: "btn small" + (isAuto ? " primary" : "") }, isAuto ? "Auto" : "Manual");
+        modeBtn.onclick = withLoading(modeBtn, async () => {
+          if (isAuto) {
+            // Lock to Manual, keeping the current values.
+            const vals = { MV: lm.MV, MEV: lm.MEV, MAV_lo: lm.MAV_lo, MAV_hi: lm.MAV_hi, MRV: lm.MRV, auto: false };
+            await run(data.saveLandmark(g, vals), { ok: `${g} set to Manual` });
+            landmarks[g] = vals;
+          } else {
+            // Back to Auto: snap to the profile-generated baseline.
+            const gen = generateLandmarks(profile || {})[g];
+            const vals = { ...gen, auto: true };
+            await run(data.saveLandmark(g, vals), { ok: `${g} set to Auto` });
+            landmarks[g] = vals;
+          }
+          renderRows();
+        });
+        row.append(el("td", {}, modeBtn));
+
+        if (isAuto) {
+          row.append(el("td", {}, el("span", { class: "muted small" }, "auto")));
+        } else {
+          row.append(el("td", {},
+            el("button", {
+              class: "btn small",
+              onclick: async () => {
+                const vals = {
+                  MV: +fields.MV.value, MEV: +fields.MEV.value,
+                  MAV_lo: +fields.MAV_lo.value, MAV_hi: +fields.MAV_hi.value,
+                  MRV: +fields.MRV.value, auto: false,
+                };
+                await run(data.saveLandmark(g, vals), { ok: "Saved" });
+                landmarks[g] = vals;
+              },
+            }, "Save"),
+          ));
+        }
+        body.append(row);
       }
-      row.append(el("td", {},
-        el("button", {
-          class: "btn small",
-          onclick: async () => {
-            await run(
-              data.saveLandmark(g, {
-                MV: +fields.MV.value, MEV: +fields.MEV.value,
-                MAV_lo: +fields.MAV_lo.value, MAV_hi: +fields.MAV_hi.value,
-                MRV: +fields.MRV.value,
-              }),
-              { ok: "Saved" },
-            );
-          },
-        }, "Save"),
-      ));
-      body.append(row);
     }
+    renderRows();
+
     card.append(table);
     container.append(card);
 

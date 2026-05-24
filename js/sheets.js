@@ -14,7 +14,7 @@ const TABS = {
   },
   landmarks: {
     title: "VolumeLandmarks",
-    headers: ["muscleGroup", "MV", "MEV", "MAV_lo", "MAV_hi", "MRV"],
+    headers: ["muscleGroup", "MV", "MEV", "MAV_lo", "MAV_hi", "MRV", "auto"],
   },
   mesocycles: {
     title: "Mesocycles",
@@ -172,6 +172,37 @@ export async function ensureTabs(spreadsheetId) {
         })),
       },
     });
+  }
+
+  // Reconcile headers for tabs that already exist but predate a column we've
+  // since added (e.g. the landmarks `auto` flag). Only ever appends missing
+  // trailing columns — if the stored header isn't a prefix of the canonical
+  // one we leave it untouched so we never clobber unexpected layouts.
+  const present = Object.values(TABS).filter((t) => existing.has(t.title));
+  if (present.length) {
+    const headerResp = await withRetry(() =>
+      sheets.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges: present.map((t) => `${t.title}!1:1`),
+      }),
+    );
+    const ranges = headerResp.result.valueRanges || [];
+    const repairs = [];
+    present.forEach((t, i) => {
+      const current = (ranges[i]?.values && ranges[i].values[0]) || [];
+      const isPrefix = current.every((h, j) => h === t.headers[j]);
+      if (isPrefix && current.length < t.headers.length) {
+        repairs.push({ range: `${t.title}!A1`, values: [t.headers] });
+      }
+    });
+    if (repairs.length) {
+      await withRetry(() =>
+        sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId,
+          resource: { valueInputOption: "RAW", data: repairs },
+        }),
+      );
+    }
   }
   return meta.result;
 }

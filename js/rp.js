@@ -5184,3 +5184,37 @@ export function suggestWeight(prev, targetReps, targetRIR, exerciseName) {
   }
   return Math.round(raw * 2) / 2;
 }
+
+// Flatten every program-template day into a reusable "workout module" that
+// targets a particular set of muscle groups. Identical day layouts (same
+// exercises) collapse into one module. `groups` maps muscle group -> number of
+// exercises (a proxy for working sets) so suggestions can match modules to the
+// muscles a lifter wants to bring up.
+export function getWorkoutModules() {
+  const bySignature = new Map();
+  PROGRAM_TEMPLATES.forEach((tpl) => {
+    (tpl.days || []).forEach((day, di) => {
+      const exercises = (day.exercises || []).map((e) => ({
+        exercise: e.exercise,
+        muscleGroup: e.muscleGroup,
+      }));
+      if (!exercises.length) return;
+      const signature = exercises.map((e) => e.exercise).sort().join("|");
+      if (bySignature.has(signature)) return;
+      const groups = {};
+      for (const e of exercises) {
+        if (!e.muscleGroup) continue;
+        groups[e.muscleGroup] = (groups[e.muscleGroup] || 0) + 1;
+      }
+      bySignature.set(signature, {
+        id: `${tpl.name}::${di}`,
+        label: `${day.name} · ${tpl.name}`,
+        dayName: day.name,
+        templateName: tpl.name,
+        exercises,
+        groups,
+      });
+    });
+  });
+  return [...bySignature.values()];
+}
