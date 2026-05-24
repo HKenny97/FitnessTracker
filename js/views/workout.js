@@ -5,6 +5,43 @@ import { distributeSets } from "../rp.js";
 import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight } from "../adaptive.js";
 import { parseSets } from "../parse-sets.js";
+import { resolveExerciseName } from "../exercise-match.js";
+
+// Inline panel listing chunks the parser couldn't resolve, each an editable
+// row the user can fix and re-parse. Mutates the passed `errors` array in
+// place; `addSets` receives sets from a successfully re-parsed chunk, and
+// `afterApply` (optional) refreshes the surrounding set list.
+function buildUnparsedPanel(errors, addSets, afterApply) {
+  const panel = el("div", { style: { marginBottom: "0.5rem" } });
+  function render() {
+    panel.replaceChildren();
+    if (!errors.length) return;
+    panel.append(el("div", { class: "muted small", style: { marginBottom: "0.25rem" } },
+      "Couldn't parse — fix & re-parse:"));
+    errors.forEach((err, idx) => {
+      const input = el("input", { type: "text", value: err.segment, autocomplete: "off", style: { flex: "1" } });
+      function reparse() {
+        const r = parseSets(input.value);
+        if (!r.sets.length) return toast(`Still can't parse "${input.value}"`, "bad");
+        addSets(r.sets);
+        // Replace this row with any leftover errors from the re-parse.
+        errors.splice(idx, 1, ...r.errors);
+        if (afterApply) afterApply();
+        render();
+      }
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); reparse(); } });
+      panel.append(
+        el("div", { class: "row", style: { gap: "0.4rem", marginBottom: "0.25rem" } },
+          input,
+          el("button", { class: "btn small", onclick: reparse }, "Re-parse"),
+          el("button", { class: "btn small ghost", "aria-label": "Dismiss", onclick: () => { errors.splice(idx, 1); render(); } }, "×"),
+        ),
+      );
+    });
+  }
+  render();
+  return panel;
+}
 
 export async function render(container) {
   const active = await data.getActiveMesocycle();
@@ -272,20 +309,21 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     placeholder: "Quick add — e.g. 225x5/5/4 r2",
     style: { flex: "1" },
   });
-  function applyQuick() {
-    const res = parseSets(quickInput.value);
-    if (!res.sets.length) {
-      toast(res.errors.length ? `Couldn't parse "${res.errors[0].segment}"` : "Nothing to parse", "bad");
-      return;
-    }
-    for (const set of res.sets) {
+  const errorsContainer = el("div", {});
+  const pushDrafts = (sets) => {
+    for (const set of sets) {
       drafts.push({
         weight: set.weight != null ? String(set.weight) : (suggested || ""),
         reps: set.reps != null ? String(set.reps) : "",
         rir: set.rir != null ? String(set.rir) : String(targetRIR),
       });
     }
-    if (res.errors.length) toast(`Skipped ${res.errors.length} unparseable part(s)`, "bad");
+  };
+  function applyQuick() {
+    const res = parseSets(quickInput.value);
+    if (!res.sets.length && !res.errors.length) return toast("Nothing to parse", "bad");
+    pushDrafts(res.sets);
+    errorsContainer.replaceChildren(buildUnparsedPanel(res.errors, pushDrafts, renderSets));
     quickInput.value = "";
     renderSets();
   }
@@ -297,6 +335,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
       quickInput,
       el("button", { class: "btn small", onclick: applyQuick }, "Parse"),
     ),
+    errorsContainer,
     setsContainer,
   );
 
@@ -503,46 +542,41 @@ async function renderCustomMode(root, onFinish) {
   const customRoot = el("div", {});
   root.append(customRoot);
 
-  // Resolve a typed exercise name to a library entry: exact match first, then
-  // a unique substring match. Returns null on no match or ambiguity, leaving
-  // the caller to fall back to the picker.
-  function resolveExercise(query) {
-    const q = normalizeName(query);
-    if (!q) return null;
-    const exact = exerciseLib.find((e) => normalizeName(e.name) === q);
-    if (exact) return exact;
-    const contains = exerciseLib.filter((e) => normalizeName(e.name).includes(q));
-    return contains.length === 1 ? contains[0] : null;
-  }
+  // Chunks from the most recent quick-log that couldn't be parsed, kept in
+  // state so the resolution panel survives a full rerender().
+  let pendingParse = null; // { exerciseName, errors:[{segment,reason}] }
+
+  const toUnsaved = (set) => ({
+    weight: set.weight != null ? String(set.weight) : "",
+    reps: set.reps != null ? String(set.reps) : "",
+    rir: set.rir != null ? String(set.rir) : "",
+    saved: false,
+  });
+
+  const findEntry = (name) => exercises.find((e) => normalizeName(e.exercise) === normalizeName(name));
 
   // Quick-log path: parse "<exercise> <sets>" (e.g. "bench 3x8 @185"), resolve
-  // the exercise, and append the parsed sets as unsaved rows for review.
+  // the exercise (with alias/fuzzy matching), and append the parsed sets as
+  // unsaved rows for review. Unparseable set chunks surface in a fix-up panel.
   function quickAddExercise(text) {
     const res = parseSets(text);
     if (!res.name) return toast('Lead with an exercise name, e.g. "bench 3x8 @185"', "bad");
 
-    const addSetsTo = (name, group) => {
-      let entry = exercises.find((e) => normalizeName(e.exercise) === normalizeName(name));
+    const commit = (name, group) => {
+      let entry = findEntry(name);
       if (!entry) {
         entry = { exercise: name, muscleGroup: group || "", sets: [] };
         exercises.push(entry);
       }
-      for (const set of res.sets) {
-        entry.sets.push({
-          weight: set.weight != null ? String(set.weight) : "",
-          reps: set.reps != null ? String(set.reps) : "",
-          rir: set.rir != null ? String(set.rir) : "",
-          saved: false,
-        });
-      }
-      if (res.errors.length) toast(`Skipped ${res.errors.length} unparseable part(s)`, "bad");
+      for (const set of res.sets) entry.sets.push(toUnsaved(set));
+      pendingParse = res.errors.length ? { exerciseName: entry.exercise, errors: res.errors } : null;
       rerender();
     };
 
-    const match = resolveExercise(res.name);
-    if (match) return addSetsTo(match.name, match.group);
+    const match = resolveExerciseName(res.name, exerciseLib);
+    if (match) return commit(match.name, match.group);
     toast(`No exact match for "${res.name}" — pick one`, "");
-    openExercisePicker({ exerciseLib, onPick: ({ name, group }) => addSetsTo(name, group) });
+    openExercisePicker({ exerciseLib, onPick: ({ name, group }) => commit(name, group) });
   }
 
   function rerender() {
@@ -561,27 +595,37 @@ async function renderCustomMode(root, onFinish) {
     quickEx.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); quickAddExercise(quickEx.value); }
     });
-    customRoot.append(
-      el("section", { class: "card" },
-        el("h3", {}, "Add exercise"),
-        el("button", {
-          class: "btn primary add-exercise-btn",
-          onclick: () => openExercisePicker({
-            exerciseLib,
-            exclude: exercises.map((e) => e.exercise),
-            onPick: ({ name, group }) => {
-              if (exercises.some((e) => e.exercise === name)) return toast("Already added", "bad");
-              exercises.push({ exercise: name, muscleGroup: group || "", sets: [] });
-              rerender();
-            },
-          }),
-        }, "+ Add exercise"),
-        el("div", { class: "row", style: { gap: "0.4rem", marginTop: "0.5rem" } },
-          quickEx,
-          el("button", { class: "btn", onclick: () => quickAddExercise(quickEx.value) }, "Parse & add"),
-        ),
+    const addCard = el("section", { class: "card" },
+      el("h3", {}, "Add exercise"),
+      el("button", {
+        class: "btn primary add-exercise-btn",
+        onclick: () => openExercisePicker({
+          exerciseLib,
+          exclude: exercises.map((e) => e.exercise),
+          onPick: ({ name, group }) => {
+            if (exercises.some((e) => e.exercise === name)) return toast("Already added", "bad");
+            exercises.push({ exercise: name, muscleGroup: group || "", sets: [] });
+            rerender();
+          },
+        }),
+      }, "+ Add exercise"),
+      el("div", { class: "row", style: { gap: "0.4rem", marginTop: "0.5rem" } },
+        quickEx,
+        el("button", { class: "btn", onclick: () => quickAddExercise(quickEx.value) }, "Parse & add"),
       ),
     );
+    if (pendingParse) {
+      const addToEntry = (sets) => {
+        const entry = findEntry(pendingParse.exerciseName);
+        if (entry) for (const set of sets) entry.sets.push(toUnsaved(set));
+      };
+      const afterApply = () => { if (!pendingParse.errors.length) pendingParse = null; rerender(); };
+      addCard.append(
+        el("div", { class: "muted small", style: { marginTop: "0.5rem" } }, `Unresolved in "${pendingParse.exerciseName}":`),
+        buildUnparsedPanel(pendingParse.errors, addToEntry, afterApply),
+      );
+    }
+    customRoot.append(addCard);
 
     if (!exercises.length) {
       customRoot.append(el("p", { class: "muted" }, "Add exercises above to start logging."));
@@ -633,21 +677,15 @@ async function renderCustomMode(root, onFinish) {
       placeholder: "Quick add — e.g. 225x5/5/4 r2",
       style: { flex: "1" },
     });
+    const blockErrors = el("div", {});
+    const pushBlock = (sets) => {
+      for (const set of sets) ex.sets.push(toUnsaved(set));
+    };
     function applyBlockQuick() {
       const res = parseSets(blockQuick.value);
-      if (!res.sets.length) {
-        toast(res.errors.length ? `Couldn't parse "${res.errors[0].segment}"` : "Nothing to parse", "bad");
-        return;
-      }
-      for (const set of res.sets) {
-        ex.sets.push({
-          weight: set.weight != null ? String(set.weight) : "",
-          reps: set.reps != null ? String(set.reps) : "",
-          rir: set.rir != null ? String(set.rir) : "",
-          saved: false,
-        });
-      }
-      if (res.errors.length) toast(`Skipped ${res.errors.length} unparseable part(s)`, "bad");
+      if (!res.sets.length && !res.errors.length) return toast("Nothing to parse", "bad");
+      pushBlock(res.sets);
+      blockErrors.replaceChildren(buildUnparsedPanel(res.errors, pushBlock, renderSets));
       blockQuick.value = "";
       renderSets();
     }
@@ -659,6 +697,7 @@ async function renderCustomMode(root, onFinish) {
         blockQuick,
         el("button", { class: "btn small", onclick: applyBlockQuick }, "Parse"),
       ),
+      blockErrors,
       setsContainer,
     );
 

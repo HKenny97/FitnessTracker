@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "check:substitutes": "node tools/check-substitutes.mjs",
-    "check:parse": "node tools/check-parse-sets.mjs"
+    "check:parse": "node tools/check-parse-sets.mjs",
+    "check:aliases": "node tools/check-aliases.mjs"
   }
 }

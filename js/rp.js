@@ -2884,6 +2884,39 @@ export function suggestRest(exerciseName) {
 }
 
 
+// Whole-query shortcuts → canonical library exercise name. Keys are lowercase;
+// every value must be a real EXERCISE_LIBRARY name (guarded by check:aliases).
+export const EXERCISE_ALIASES = {
+  ohp: "Overhead Press",
+  rdl: "Romanian Deadlift",
+  bss: "Bulgarian Split Squat",
+  bp: "Barbell Bench Press",
+  bench: "Barbell Bench Press",
+  pullup: "Pull-Up",
+  "pull up": "Pull-Up",
+  chinup: "Chin-Up",
+  "chin up": "Chin-Up",
+  pushup: "Push-Up",
+  "push up": "Push-Up",
+  bor: "Barbell Row",
+};
+
+// Token-level synonyms expanded during name matching (e.g. "oh press" →
+// "overhead press"). Values may be multi-word.
+export const NAME_TOKEN_SYNONYMS = {
+  oh: "overhead",
+  ohp: "overhead press",
+  db: "dumbbell",
+  bb: "barbell",
+  ez: "ez-bar",
+  sl: "single leg",
+  bw: "bodyweight",
+  inc: "incline",
+  incl: "incline",
+  dec: "decline",
+  rdl: "romanian deadlift",
+};
+
 export const EXERCISE_SUBSTITUTES = {
 
   // ════════════════════════════════════════════════════════════
