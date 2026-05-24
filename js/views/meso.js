@@ -1,4 +1,4 @@
-import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal, normalizeName } from "../ui.js";
+import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal, normalizeName, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, EXERCISE_SUBSTITUTES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
@@ -401,7 +401,7 @@ export async function renderNew(container) {
               },
                 el("option", { value: "" }, "— select —"),
                 ...MUSCLE_GROUPS.map((g) =>
-                  el("option", { value: g, selected: ex.muscleGroup === g ? "" : null }, g)),
+                  el("option", { value: g, selected: ex.muscleGroup === g ? "" : null }, formatMuscle(g))),
               ),
               el("button", {
                 class: "btn icon",
@@ -440,7 +440,7 @@ export async function renderNew(container) {
       const lm = landmarks[g] || { MEV: 8, MRV: 22 };
       const sets = progressSets(lm.MEV, lm.MRV, state.weeks);
       return el("tr", {},
-        el("td", { class: "muscle" }, g),
+        el("td", { class: "muscle" }, formatMuscle(g)),
         ...sets.map((s, i) =>
           el("td", { class: i === state.weeks - 1 ? "deload" : "" }, s)),
       );
@@ -570,7 +570,7 @@ export async function renderDetail(container, id) {
   );
   const body = el("tbody", {},
     ...groups.map((g) => {
-      const row = el("tr", {}, el("td", { class: "muscle" }, g));
+      const row = el("tr", {}, el("td", { class: "muscle" }, formatMuscle(g)));
       for (let w = 1; w <= weeks; w++) {
         const p = plan.find((x) => x.muscleGroup === g && x.week === w);
         const cell = p
@@ -601,7 +601,7 @@ export async function renderDetail(container, id) {
             el("li", {},
               e.exercise,
               " · ",
-              el("span", { class: "muted small" }, e.muscleGroup),
+              el("span", { class: "muted small" }, formatMuscle(e.muscleGroup)),
             ),
           ),
         ),
@@ -697,7 +697,7 @@ async function renderEdit(container, id) {
               el("div", { class: "row" },
                 el("select", { style: { flex: 1 }, onchange: (e) => (ex.muscleGroup = e.target.value) },
                   el("option", { value: "" }, "— select —"),
-                  ...MUSCLE_GROUPS.map((g) => el("option", { value: g, selected: ex.muscleGroup === g ? "" : null }, g)),
+                  ...MUSCLE_GROUPS.map((g) => el("option", { value: g, selected: ex.muscleGroup === g ? "" : null }, formatMuscle(g))),
                 ),
                 el("button", { class: "btn icon", title: "Remove", onclick: () => { day.exercises.splice(ei, 1); rerender(); } }, "×"),
               ),

@@ -45,6 +45,11 @@ export function fmtDate(s) {
 // Case/whitespace-insensitive name key for matching free-text exercise names.
 export const normalizeName = (s) => (s || "").trim().toLowerCase();
 
+// Title-case a muscle/area name for display only (keys stay canonical):
+// "Shoulders (side delts)" -> "Shoulders (Side Delts)". Idempotent.
+export const formatMuscle = (name) =>
+  (name || "").replace(/[A-Za-z]+/g, (w) => w[0].toUpperCase() + w.slice(1));
+
 export function isoToday() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

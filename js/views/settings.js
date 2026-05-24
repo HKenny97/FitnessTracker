@@ -1,4 +1,4 @@
-import { el, run, toast, withLoading, confirmModal } from "../ui.js";
+import { el, run, toast, withLoading, confirmModal, formatMuscle } from "../ui.js";
 import { config, setClientId, setDisplayUnit } from "../config.js";
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
@@ -150,7 +150,7 @@ export async function render(container) {
     for (const g of MUSCLE_GROUPS) {
       const lm = landmarks[g] || { MV: 0, MEV: 0, MAV_lo: 0, MAV_hi: 0, MRV: 0 };
       const row = el("tr", {});
-      row.append(el("td", { class: "muscle" }, g));
+      row.append(el("td", { class: "muscle" }, formatMuscle(g)));
       const fields = {};
       for (const k of ["MV", "MEV", "MAV_lo", "MAV_hi", "MRV"]) {
         const inp = el("input", { type: "number", value: lm[k], min: 0, style: { width: "70px" } });
@@ -196,7 +196,7 @@ export async function render(container) {
       el("div", { class: "field" },
         el("label", {}, "Muscle group"),
         el("select", { onchange: (e) => (newEx.group = e.target.value) },
-          ...MUSCLE_GROUPS.map((g) => el("option", { value: g }, g)),
+          ...MUSCLE_GROUPS.map((g) => el("option", { value: g }, formatMuscle(g))),
         ),
       ),
       el("div", { class: "field" },
@@ -230,7 +230,7 @@ export async function render(container) {
           el("div", {},
             el("strong", {}, c.name),
             el("span", { class: "muted small", style: { marginLeft: "0.5rem" } },
-              `${c.group}${c.equipment ? " · " + c.equipment : ""}`),
+              `${formatMuscle(c.group)}${c.equipment ? " · " + c.equipment : ""}`),
           ),
           el("button", {
             class: "btn small danger ghost",

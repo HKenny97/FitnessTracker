@@ -1,9 +1,10 @@
-import { el, fmtDate, isoToday, confirmModal, withLoading, run, toast } from "../ui.js";
+import { el, fmtDate, isoToday, confirmModal, withLoading, run, toast, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { drawChart } from "../chart.js";
 import { epley1RM } from "../rp.js";
 import { toDisplay, fromDisplay, unitLabel } from "../units.js";
+import { renderSummary } from "./workout.js";
 
 export async function render(container) {
   const [sessionsSrc, setsSrc, allMesos, cardioEntries] = await Promise.all([
@@ -54,6 +55,16 @@ export async function render(container) {
     if (viewMode === "list") renderList();
     else if (viewMode === "calendar") renderCalendar();
     else if (viewMode === "charts") renderCharts();
+  }
+
+  // Open a past workout's summary (reuses the Train-view summary renderer).
+  function openSummaryModal(mesoId, date) {
+    const overlay = el("div", { class: "modal-overlay" });
+    const body = el("div", {});
+    overlay.append(el("div", { class: "modal-card" }, body));
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.append(overlay);
+    renderSummary(body, mesoId, date, () => overlay.remove());
   }
 
   // -- Helpers for comparisons --
@@ -115,7 +126,7 @@ export async function render(container) {
         el("div", { class: "exercise-detail-head" },
           el("div", {},
             el("strong", {}, exercise),
-            el("span", { class: "pill small", style: { marginLeft: "0.5rem" } }, exSets[0].muscleGroup),
+            el("span", { class: "pill small", style: { marginLeft: "0.5rem" } }, formatMuscle(exSets[0].muscleGroup)),
           ),
           comp,
         ),
@@ -182,6 +193,10 @@ export async function render(container) {
       ),
     );
 
+    const summaryBtn = el("button", { class: "btn small", style: { marginTop: "0.5rem", marginRight: "0.5rem" } }, "View summary");
+    summaryBtn.onclick = () => openSummaryModal(dateSets[0].mesoId, date);
+    detail.append(summaryBtn);
+
     // Session delete button
     const sess = dateSessions ? dateSessions[0] : null;
     if (sess) {
@@ -235,7 +250,7 @@ export async function render(container) {
           oninput: (e) => { searchText = e.target.value; rerender(); } }),
         el("select", { onchange: (e) => { filterGroup = e.target.value; rerender(); } },
           el("option", { value: "" }, "All muscles"),
-          ...allGroups.map((g) => el("option", { value: g, selected: filterGroup === g ? "" : null }, g)),
+          ...allGroups.map((g) => el("option", { value: g, selected: filterGroup === g ? "" : null }, formatMuscle(g))),
         ),
       ),
     );
@@ -271,7 +286,7 @@ export async function render(container) {
       }
       const muscles = Object.entries(muscleMap)
         .sort((a, b) => b[1] - a[1])
-        .map(([g, n]) => `${g} (${n})`);
+        .map(([g, n]) => `${formatMuscle(g)} (${n})`);
 
       const card = el("div", { class: "card history-card" + (isExpanded ? " expanded" : "") });
 

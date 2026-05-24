@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import { ensureToken } from "./auth.js";
+import { toIsoDate } from "./dates.js";
 
 // Thin wrapper around the Google Sheets v4 REST API via gapi.client.
 // Persists a single spreadsheet ID in localStorage so the app finds the
@@ -212,7 +213,10 @@ function parseRows(result, key) {
     .filter((row) => row.length > 0)
     .map((row) => {
       const obj = {};
-      headers.forEach((h, i) => (obj[h] = row[i] ?? ""));
+      headers.forEach((h, i) => {
+        const v = row[i] ?? "";
+        obj[h] = h === "date" ? toIsoDate(v) : v;
+      });
       return obj;
     });
 }

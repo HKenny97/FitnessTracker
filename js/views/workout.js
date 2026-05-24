@@ -1,4 +1,4 @@
-import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName } from "../ui.js";
+import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS } from "../rp.js";
@@ -106,7 +106,7 @@ export async function render(container) {
 
     if (summaryMode) {
       const mesoId = mode === "meso" ? active.id : CUSTOM_MESO_ID;
-      await renderSummary(root, mesoId, () => { summaryMode = false; fullRender(); });
+      await renderSummary(root, mesoId, isoToday(), () => { summaryMode = false; fullRender(); });
       return;
     }
 
@@ -314,7 +314,7 @@ async function renderMesoMode(root, active, onFinish) {
       });
       card.append(
         el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem" } },
-          el("div", {}, el("strong", {}, it.muscleGroup), el("div", { class: "muted small" }, it.reason)),
+          el("div", {}, el("strong", {}, formatMuscle(it.muscleGroup)), el("div", { class: "muted small" }, it.reason)),
           acceptBtn,
         ),
       );
@@ -337,7 +337,7 @@ function buildFeedbackCard(muscles, state) {
   for (const m of muscles) {
     card.append(
       el("div", { class: "field-row", style: { alignItems: "end", gap: "0.4rem", marginTop: "0.4rem" } },
-        el("div", { class: "field", style: { flex: "1" } }, el("label", {}, m)),
+        el("div", { class: "field", style: { flex: "1" } }, el("label", {}, formatMuscle(m))),
         el("div", { class: "field" }, el("label", { class: "muted small" }, "Pump"), sel(m, "pump")),
         el("div", { class: "field" }, el("label", { class: "muted small" }, "Sore"), sel(m, "soreness")),
         el("div", { class: "field" }, el("label", { class: "muted small" }, "Joint"), sel(m, "jointPain")),
@@ -751,7 +751,7 @@ async function renderCustomMode(root, onFinish) {
       card.append(
         el("div", { style: { marginTop: "0.5rem" } },
           el("div", { class: "row", style: { justifyContent: "space-between" } },
-            el("span", {}, el("strong", {}, g), targetGroups.has(g) ? null : el("span", { class: "muted small" }, " · extra")),
+            el("span", {}, el("strong", {}, formatMuscle(g)), targetGroups.has(g) ? null : el("span", { class: "muted small" }, " · extra")),
             el("span", { class: "muted small" }, `${sets} / ${lo}–${hi} sets`),
           ),
           el("div", { style: { height: "6px", background: "rgba(255,255,255,0.1)", borderRadius: "3px", overflow: "hidden", marginTop: "0.2rem" } },
@@ -792,7 +792,7 @@ async function renderCustomMode(root, onFinish) {
           type: "button",
           class: "filter-chip" + (targetGroups.has(g) ? " active" : ""),
           onclick: () => { targetGroups.has(g) ? targetGroups.delete(g) : targetGroups.add(g); rerender(); },
-        }, g.replace(/^Shoulders \((.*)\)$/, "$1")));
+        }, formatMuscle(g.replace(/^Shoulders \((.*)\)$/, "$1"))));
       }
       card.append(el("div", { class: "picker-filter-label" }, region), row);
     }
@@ -819,7 +819,7 @@ async function renderCustomMode(root, onFinish) {
           rerender();
         } }, e.name));
       }
-      card.append(el("div", { class: "picker-filter-label" }, group), row);
+      card.append(el("div", { class: "picker-filter-label" }, formatMuscle(group)), row);
     }
     return any ? card : null;
   }
@@ -939,7 +939,7 @@ async function renderCustomMode(root, onFinish) {
         el("div", {},
           el("h3", {}, ex.exercise),
           el("div", { class: "exercise-meta" },
-            el("span", { class: "pill" }, ex.muscleGroup),
+            el("span", { class: "pill" }, formatMuscle(ex.muscleGroup)),
             MUSCLE_REFERENCE[ex.muscleGroup]
               ? el("span", { class: "muted small" }, `${MUSCLE_REFERENCE[ex.muscleGroup].repRange} reps · ${MUSCLE_REFERENCE[ex.muscleGroup].rest} rest`)
               : null,
@@ -1135,8 +1135,8 @@ async function renderCustomMode(root, onFinish) {
 
 // ── Workout summary ──
 
-async function renderSummary(container, mesoId, onBack) {
-  const today = isoToday();
+export async function renderSummary(container, mesoId, date, onBack) {
+  const today = date;
   const allSets = await data.listSets();
   const todaySets = allSets.filter((s) => s.date === today && s.mesoId === mesoId);
 
@@ -1146,8 +1146,8 @@ async function renderSummary(container, mesoId, onBack) {
   if (!todaySets.length) {
     container.append(
       el("section", { class: "card workout-summary" },
-        el("h2", {}, "No sets logged today"),
-        el("button", { class: "btn", style: { marginTop: "1rem" }, onclick: onBack }, "Back to training"),
+        el("h2", {}, "No sets logged"),
+        el("button", { class: "btn", style: { marginTop: "1rem" }, onclick: onBack }, "Back"),
       ),
     );
     return;
@@ -1254,7 +1254,7 @@ async function renderSummary(container, mesoId, onBack) {
   const muscleEntries = Object.entries(muscleMap).sort((a, b) => b[1] - a[1]);
   summary.append(
     el("div", { class: "history-muscles", style: { justifyContent: "center", marginBottom: "0.75rem" } },
-      ...muscleEntries.map(([g, n]) => el("span", { class: "pill small" }, `${g} (${n})`)),
+      ...muscleEntries.map(([g, n]) => el("span", { class: "pill small" }, `${formatMuscle(g)} (${n})`)),
     ),
   );
 

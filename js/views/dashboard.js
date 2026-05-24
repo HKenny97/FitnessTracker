@@ -1,4 +1,4 @@
-import { el, fmtDate, isoToday, stat } from "../ui.js";
+import { el, fmtDate, isoToday, stat, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
@@ -107,7 +107,7 @@ export async function render(container, { signedIn }) {
       const done = weekVol[p.muscleGroup] || 0;
       const pct = Math.min(100, Math.round((done / Math.max(1, p.targetSets)) * 100));
       const cells = [
-        el("td", { class: "muscle" }, p.muscleGroup),
+        el("td", { class: "muscle" }, formatMuscle(p.muscleGroup)),
         el("td", {}, `${done} / ${p.targetSets}`),
         el("td", {}, `${p.targetRIR} RIR`),
         el("td", {},
@@ -203,7 +203,7 @@ export async function render(container, { signedIn }) {
 
         const pills = el("div", { class: "muscle-pills" });
         for (const mg of muscleGroups) {
-          pills.append(el("span", { class: "pill" }, mg));
+          pills.append(el("span", { class: "pill" }, formatMuscle(mg)));
         }
 
         section.append(
@@ -314,7 +314,7 @@ export async function render(container, { signedIn }) {
       const pct = Math.round((count / maxCount) * 100);
       section.append(
         el("div", { class: "muscle-dist-row" },
-          el("span", { class: "muscle-dist-label" }, mg),
+          el("span", { class: "muscle-dist-label" }, formatMuscle(mg)),
           el("div", { class: "muscle-dist-bar" },
             el("div", { class: "muscle-dist-fill", style: { width: pct + "%" } }),
           ),

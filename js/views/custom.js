@@ -1,4 +1,4 @@
-import { el, isoToday, run, toast } from "../ui.js";
+import { el, isoToday, run, toast, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS } from "../rp.js";
 
@@ -120,7 +120,7 @@ export async function render(container) {
             },
               el("option", { value: "" }, "All muscles"),
               ...MUSCLE_GROUPS.map((g) =>
-                el("option", { value: g, selected: filterGroup === g ? "" : null }, g)),
+                el("option", { value: g, selected: filterGroup === g ? "" : null }, formatMuscle(g))),
             ),
           ),
           el("div", { class: "field" },
@@ -169,7 +169,7 @@ export async function render(container) {
         el("div", {},
           el("h3", {}, ex.exercise),
           el("div", { class: "exercise-meta" },
-            el("span", { class: "pill" }, ex.muscleGroup),
+            el("span", { class: "pill" }, formatMuscle(ex.muscleGroup)),
           ),
         ),
         el("button", {

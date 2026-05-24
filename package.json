@@ -11,6 +11,7 @@
     "check:plates": "node tools/check-plates.mjs",
     "check:autoreg": "node tools/check-autoreg.mjs",
     "check:suggest": "node tools/check-suggest.mjs",
-    "check:reference": "node tools/check-reference.mjs"
+    "check:reference": "node tools/check-reference.mjs",
+    "check:dates": "node tools/check-dates.mjs"
   }
 }
