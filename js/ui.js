@@ -77,10 +77,10 @@ export function withLoading(btn, asyncFn) {
   };
 }
 
-export function confirmModal(message, onConfirm) {
+export function confirmModal(message, onConfirm, { confirmLabel = "Delete", danger = true } = {}) {
   const overlay = el("div", { class: "modal-overlay" });
   const cancel = el("button", { class: "btn small" }, "Cancel");
-  const confirm = el("button", { class: "btn small danger" }, "Delete");
+  const confirm = el("button", { class: "btn small" + (danger ? " danger" : " primary") }, confirmLabel);
   cancel.onclick = () => overlay.remove();
   confirm.onclick = async () => {
     confirm.disabled = true;

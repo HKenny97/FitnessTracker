@@ -3,6 +3,7 @@ import { config, setClientId, setDisplayUnit, isUsingDemoClientId } from "../con
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
+import { seedDemoData } from "../seed.js";
 
 export async function render(container) {
   container.append(el("h1", {}, "Settings"));
@@ -252,6 +253,35 @@ export async function render(container) {
 
     await renderCustomList();
     container.append(customExCard);
+
+    // Demo data
+    const demoCard = el("section", { class: "card" },
+      el("h2", {}, "Demo data"),
+      el("p", { class: "muted small" },
+        "Inject a fully-logged 6-week PPL mesocycle (≈315 sets across 5 weeks), session feedback, and cardio so you can see the app with rich data. Any current active mesocycle is archived. Everything lands in the \"Demo — Hypertrophy Block\" mesocycle, which you can delete later from the Meso tab."),
+    );
+    const demoStatus = el("span", { class: "muted small", style: { marginLeft: "0.6rem" } });
+    const demoBtn = el("button", { class: "btn primary" }, "Inject demo data");
+    demoBtn.onclick = () => {
+      confirmModal(
+        "Inject a demo mesocycle with ~315 logged sets, sessions, feedback, and cardio? Your current active mesocycle (if any) will be archived to 'completed'.",
+        withLoading(demoBtn, async () => {
+          try {
+            const res = await seedDemoData((msg) => { demoStatus.textContent = msg; });
+            demoStatus.textContent = "";
+            toast(`Added ${res.sets} sets, ${res.sessions} sessions, ${res.cardio} cardio entries`, "ok");
+            setTimeout(() => { location.hash = "#/"; location.reload(); }, 700);
+          } catch (e) {
+            console.error(e);
+            demoStatus.textContent = "";
+            toast(e?.result?.error?.message || e?.message || "Seeding failed", "bad");
+          }
+        }),
+        { confirmLabel: "Inject", danger: false },
+      );
+    };
+    demoCard.append(el("div", { class: "row", style: { alignItems: "center" } }, demoBtn, demoStatus));
+    container.append(demoCard);
 
     // Data export
     const exportCard = el("section", { class: "card" },
