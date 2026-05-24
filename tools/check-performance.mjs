@@ -2,6 +2,7 @@
 //   node tools/check-performance.mjs   (or: npm run check:performance)
 import {
   performanceVsNormal,
+  performanceReason,
   sessionVerdict,
   e1rmTrend,
   sessionBestE1RMs,
@@ -124,6 +125,53 @@ ok(sessionVerdict([{ level: "new", expectedE1RM: 0, actualE1RM: 0 }]) === null,
     { level: "below", expectedE1RM: 100, actualE1RM: 92 },
   ]);
   ok(v && v.level === "below", `net below (got ${v && v.level})`);
+}
+
+// ── performanceReason (qualitative driver phrase) ────────────
+
+const threePrior = (w, r) => [
+  ...sess("2026-05-01", w, r),
+  ...sess("2026-05-08", w, r),
+  ...sess("2026-05-15", w, r),
+];
+
+// No baseline → no phrase.
+ok(performanceReason([], sess("2026-05-24", 200)).phrase === null,
+  "reason: new lifter → phrase null");
+
+// Heavier today, same reps → "Heavier top set than usual".
+{
+  const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 220, 5));
+  ok(r.level === "above" && r.phrase === "Heavier top set than usual",
+    `reason heavier (got ${r.level} / ${r.phrase})`);
+}
+
+// Same weight, more reps → "More reps than usual".
+{
+  const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 200, 8));
+  ok(r.level === "above" && r.phrase === "More reps than usual",
+    `reason more reps (got ${r.level} / ${r.phrase})`);
+}
+
+// Lighter today → "Lighter top set than usual".
+{
+  const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 180, 5));
+  ok(r.level === "below" && r.phrase === "Lighter top set than usual",
+    `reason lighter (got ${r.level} / ${r.phrase})`);
+}
+
+// Same weight, fewer reps → "Fewer reps than usual".
+{
+  const r = performanceReason(threePrior(200, 6), sess("2026-05-22", 200, 4));
+  ok(r.level === "below" && r.phrase === "Fewer reps than usual",
+    `reason fewer reps (got ${r.level} / ${r.phrase})`);
+}
+
+// Essentially identical → "On par with your usual".
+{
+  const r = performanceReason(threePrior(200, 5), sess("2026-05-22", 201, 5));
+  ok(r.level === "on" && r.phrase === "On par with your usual",
+    `reason on par (got ${r.level} / ${r.phrase})`);
 }
 
 if (failures) { console.error(`\n${failures} performance check failure(s).`); process.exit(1); }

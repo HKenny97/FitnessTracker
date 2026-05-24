@@ -369,6 +369,53 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+// Like performanceVsNormal, but also adds a plain-language `phrase` saying WHAT
+// drove the above/below read — comparing today's top set (heaviest, tie-broken
+// by reps) to the average top set of the recent baseline sessions. Returns the
+// full perf object plus `phrase` (null when there's no baseline).
+export function performanceReason(priorSets, todaySets) {
+  const perf = performanceVsNormal(priorSets, todaySets);
+  if (perf.level === "new") return { ...perf, phrase: null };
+
+  const todayTop = todaySets && todaySets.length ? topSetOfSession(todaySets) : null;
+  const recentTops = groupIntoSessions(priorSets)
+    .slice(-PERF_BASELINE_WINDOW)
+    .map(topSetOfSession);
+
+  if (!todayTop || !recentTops.length) {
+    return { ...perf, phrase: levelFallbackPhrase(perf.level) };
+  }
+
+  const avgW = recentTops.reduce((s, t) => s + t.weight, 0) / recentTops.length;
+  const avgR = recentTops.reduce((s, t) => s + t.reps, 0) / recentTops.length;
+  const wThresh = Math.max(2.5, avgW * 0.01);
+  const wDir = todayTop.weight - avgW > wThresh ? 1 : avgW - todayTop.weight > wThresh ? -1 : 0;
+  const rDir = todayTop.reps - avgR > 0.5 ? 1 : avgR - todayTop.reps > 0.5 ? -1 : 0;
+
+  return { ...perf, phrase: driverPhrase(perf.level, wDir, rDir) };
+}
+
+function levelFallbackPhrase(level) {
+  return level === "above" ? "Stronger than usual"
+    : level === "below" ? "Below your usual"
+    : "On par with your usual";
+}
+
+function driverPhrase(level, wDir, rDir) {
+  if (level === "on") return "On par with your usual";
+  if (level === "above") {
+    if (wDir > 0 && rDir > 0) return "Heavier and more reps than usual";
+    if (wDir > 0) return "Heavier top set than usual";
+    if (rDir > 0) return "More reps than usual";
+    return "Stronger than usual";
+  }
+  // below
+  if (wDir < 0 && rDir < 0) return "Lighter and fewer reps than usual";
+  if (wDir < 0) return "Lighter top set than usual";
+  if (rDir < 0) return "Fewer reps than usual";
+  return "Below your usual";
+}
+
 
 // ═══════════════════════════════════════════════════════════════
 // INTERNAL HELPERS

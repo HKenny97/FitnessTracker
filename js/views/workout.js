@@ -4,7 +4,7 @@ import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS } from "../rp.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
 import { openExercisePicker } from "../exercise-picker.js";
-import { analyze, adaptiveSuggestWeight, performanceVsNormal, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
+import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
 import { parseSets } from "../parse-sets.js";
 import { resolveExerciseName } from "../exercise-match.js";
 import { config } from "../config.js";
@@ -12,20 +12,18 @@ import { toDisplay, fromDisplay, unitLabel } from "../units.js";
 import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
 import { warmupSets } from "../warmup.js";
 
-// Performance-vs-normal pill from a performanceVsNormal() result. Returns null
-// when there's no baseline yet ("new"). Colours use the shared status tokens.
+// Performance-vs-normal pill from a performanceReason() result. The text states
+// the qualitative driver (e.g. "Heavier top set than usual"); the arrow + colour
+// convey above/below. Returns null when there's no baseline yet ("new"). The
+// numeric tooltip stays as a desktop-hover bonus.
 function perfPill(perf) {
-  if (!perf || perf.level === "new") return null;
-  const map = {
-    above: { cls: "perf-above", txt: `▲ Above normal (+${perf.deltaPct}%)` },
-    on: { cls: "perf-on", txt: "On par with normal" },
-    below: { cls: "perf-below", txt: `▼ Below normal (${perf.deltaPct}%)` },
-  };
-  const c = map[perf.level];
+  if (!perf || perf.level === "new" || !perf.phrase) return null;
+  const cls = perf.level === "above" ? "perf-above" : perf.level === "below" ? "perf-below" : "perf-on";
+  const arrow = perf.level === "above" ? "▲ " : perf.level === "below" ? "▼ " : "";
   const title = perf.expectedE1RM
     ? `Today's best est. 1RM ${toDisplay(perf.actualE1RM)} vs your normal ${toDisplay(perf.expectedE1RM)} ${unitLabel()}`
     : "";
-  return el("span", { class: "perf-pill " + c.cls, title }, c.txt);
+  return el("span", { class: "perf-pill " + cls, title }, arrow + perf.phrase);
 }
 
 // Bottom-sheet plate calculator. `initialDisplay` is a weight in the current
@@ -476,7 +474,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
   const perfSlot = el("div", { style: { marginBottom: "0.5rem" } });
   block.append(perfSlot);
   function refreshPerf() {
-    const node = perfPill(performanceVsNormal(priorSets, logged));
+    const node = perfPill(performanceReason(priorSets, logged));
     perfSlot.replaceChildren();
     if (node) perfSlot.append(node);
   }
@@ -1011,7 +1009,7 @@ async function renderCustomMode(root, onFinish) {
     block.append(perfSlot);
     function refreshPerf() {
       const liveToday = ex.sets.filter((s) => s.saved).map((s) => ({ weight: +s.weight, reps: +s.reps }));
-      const node = perfPill(performanceVsNormal(priorSets, liveToday));
+      const node = perfPill(performanceReason(priorSets, liveToday));
       perfSlot.replaceChildren();
       if (node) perfSlot.append(node);
     }
@@ -1278,8 +1276,9 @@ export async function renderSummary(container, mesoId, date, onBack) {
       };
     }
 
-    // Performance vs. recent normal (more robust than the single-session delta).
-    const perf = performanceVsNormal(
+    // Performance vs. recent normal (more robust than the single-session delta),
+    // with a qualitative driver phrase for the pill.
+    const perf = performanceReason(
       allSets.filter((s) => s.exercise === exercise && s.date < today),
       exSets,
     );
@@ -1313,7 +1312,7 @@ export async function renderSummary(container, mesoId, date, onBack) {
           : null,
       ),
       el("p", { class: "muted small verdict-caption" },
-        "“Normal” is your recent baseline for each lift: the median best estimated 1RM (weight × reps) of your last few sessions. The pill shows how today compares."),
+        "“Normal” is your recent baseline for each lift: the median best estimated 1RM (weight × reps) of your last few sessions. Each pill flags how today's top set compared."),
     );
   }
 
