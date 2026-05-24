@@ -3,7 +3,7 @@ import { config, setClientId, setDisplayUnit, isUsingDemoClientId } from "../con
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
-import { seedDemoData } from "../seed.js";
+import { seedDemoData, removeDemoData } from "../seed.js";
 
 export async function render(container) {
   container.append(el("h1", {}, "Settings"));
@@ -258,7 +258,7 @@ export async function render(container) {
     const demoCard = el("section", { class: "card" },
       el("h2", {}, "Demo data"),
       el("p", { class: "muted small" },
-        "Inject a fully-logged 6-week PPL mesocycle (≈315 sets across 5 weeks), session feedback, and cardio so you can see the app with rich data. Any current active mesocycle is archived. Everything lands in the \"Demo — Hypertrophy Block\" mesocycle, which you can delete later from the Meso tab."),
+        "Inject a fully-logged 6-week PPL mesocycle (≈315 sets across 5 weeks), session feedback, and cardio so you can see the app with rich data. Any current active mesocycle is archived. Use \"Remove demo data\" to delete the \"Demo — Hypertrophy Block\" mesocycle and its sets, sessions, feedback, and demo cardio — your own data is left untouched."),
     );
     const demoStatus = el("span", { class: "muted small", style: { marginLeft: "0.6rem" } });
     const demoBtn = el("button", { class: "btn primary" }, "Inject demo data");
@@ -280,7 +280,32 @@ export async function render(container) {
         { confirmLabel: "Inject", danger: false },
       );
     };
-    demoCard.append(el("div", { class: "row", style: { alignItems: "center" } }, demoBtn, demoStatus));
+
+    const removeBtn = el("button", { class: "btn danger ghost" }, "Remove demo data");
+    removeBtn.onclick = () => {
+      confirmModal(
+        "Remove the demo mesocycle and all of its sets, sessions, feedback, and demo cardio? Your own data is untouched.",
+        withLoading(removeBtn, async () => {
+          try {
+            const res = await removeDemoData((msg) => { demoStatus.textContent = msg; });
+            demoStatus.textContent = "";
+            if (!res.mesos && !res.cardio && !res.feedback) {
+              toast("No demo data found", "");
+              return;
+            }
+            toast(`Removed demo data (${res.cardio} cardio entries too)`, "ok");
+            setTimeout(() => { location.hash = "#/"; location.reload(); }, 700);
+          } catch (e) {
+            console.error(e);
+            demoStatus.textContent = "";
+            toast(e?.result?.error?.message || e?.message || "Removal failed", "bad");
+          }
+        }),
+        { confirmLabel: "Remove" },
+      );
+    };
+
+    demoCard.append(el("div", { class: "row", style: { alignItems: "center" } }, demoBtn, removeBtn, demoStatus));
     container.append(demoCard);
 
     // Data export

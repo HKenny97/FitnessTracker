@@ -190,3 +190,39 @@ export async function seedDemoData(onProgress = () => {}) {
     cardio: cardioRows.length,
   };
 }
+
+// Remove everything seedDemoData created: the demo mesocycle(s) and their
+// sets/sessions (via deleteMesocycle), plus the tabs it doesn't touch —
+// session feedback and week-plan adjustments for those mesos, and demo cardio.
+export async function removeDemoData(onProgress = () => {}) {
+  onProgress("Finding demo data…");
+  const mesos = await data.listMesocycles();
+  const demoMesos = mesos.filter((m) => m.name === DEMO_MESO_NAME);
+  const demoIds = new Set(demoMesos.map((m) => m.id));
+
+  for (const m of demoMesos) {
+    onProgress(`Deleting ${m.name}…`);
+    await data.deleteMesocycle(m.id); // meso, days, exercises, weekPlan, sets, sessions
+  }
+
+  onProgress("Cleaning up feedback & cardio…");
+  const [feedback, adjustments, cardio] = await Promise.all([
+    sheets.readAll("sessionFeedback"),
+    sheets.readAll("weekPlanAdjustments"),
+    sheets.readAll("cardio"),
+  ]);
+
+  const keptFeedback = feedback.filter((f) => !demoIds.has(f.mesoId));
+  const removedFeedback = feedback.length - keptFeedback.length;
+  if (removedFeedback) await sheets.replaceAll("sessionFeedback", keptFeedback);
+
+  const keptAdj = adjustments.filter((a) => !demoIds.has(a.mesoId));
+  if (keptAdj.length !== adjustments.length) await sheets.replaceAll("weekPlanAdjustments", keptAdj);
+
+  const keptCardio = cardio.filter((c) => c.notes !== "demo");
+  const removedCardio = cardio.length - keptCardio.length;
+  if (removedCardio) await sheets.replaceAll("cardio", keptCardio);
+
+  data.clearCaches();
+  return { mesos: demoMesos.length, feedback: removedFeedback, cardio: removedCardio };
+}
