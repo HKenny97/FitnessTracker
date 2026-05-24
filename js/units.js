@@ -31,3 +31,15 @@ export function formatWeight(lbs) {
   if (!Number.isFinite(n)) return String(lbs);
   return `${toDisplay(n)} ${unitLabel()}`;
 }
+
+// Dumbbell weights are logged per dumbbell. These help label them and count
+// both implements in tonnage.
+export const isDumbbell = (equipment) => (equipment || "").toLowerCase() === "dumbbell";
+
+// Lifts that use a single dumbbell — doubling their volume would overcount.
+const SINGLE_IMPLEMENT = /(single[- ]?arm|one[- ]?arm|concentration|goblet|pullover)/i;
+
+// Volume multiplier for a set: 2 for two-dumbbell lifts, else 1.
+export function dbVolumeFactor(name, equipment) {
+  return isDumbbell(equipment) && !SINGLE_IMPLEMENT.test(name || "") ? 2 : 1;
+}

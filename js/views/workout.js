@@ -8,7 +8,7 @@ import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rm
 import { parseSets } from "../parse-sets.js";
 import { resolveExerciseName } from "../exercise-match.js";
 import { config } from "../config.js";
-import { toDisplay, fromDisplay, unitLabel } from "../units.js";
+import { toDisplay, fromDisplay, unitLabel, isDumbbell, dbVolumeFactor } from "../units.js";
 import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
 import { warmupSets } from "../warmup.js";
 
@@ -67,10 +67,13 @@ function openPlateModal(initialDisplay) {
     if (!perSide.length) {
       result.append(el("div", {}, `Just the bar (${bar} ${unit}).`));
     } else {
-      result.append(el("div", {}, "Per side: " + perSide.map((p) => `${p.count}×${p.plate}`).join(", ")));
+      const perSideWeight = Math.round(((loadable - bar) / 2) * 100) / 100;
+      result.append(el("div", {},
+        "Per side: " + perSide.map((p) => `${p.count}×${p.plate}`).join(", ") + ` = ${perSideWeight} ${unit}`));
     }
     result.append(el("div", { class: "muted small" },
-      `Bar ${bar} ${unit}` + (leftover > 0 ? ` · loads to ${loadable} ${unit} (${leftover} ${unit}/side short)` : "")));
+      `Bar ${bar} ${unit} · total ${loadable} ${unit}`
+      + (leftover > 0 ? ` (${leftover} ${unit}/side short of ${t})` : "")));
   }
   input.addEventListener("input", compute);
 
@@ -387,6 +390,7 @@ function buildFeedbackCard(muscles, state) {
 async function renderSession(container, meso, week, day) {
   const plan = await data.getEffectiveWeekPlan(meso.id);
   const weekPlan = plan.filter((p) => p.week === week);
+  const eqMap = await data.getEquipmentMap();
 
   const byGroup = {};
   for (const ex of day.exercises) {
@@ -422,12 +426,14 @@ async function renderSession(container, meso, week, day) {
 
   for (const ex of day.exercises) {
     const setTarget = dayShareForExercise.get(ex.exercise + "|" + ex.index) || 0;
-    const block = await renderExercise(meso, week, day, ex, setTarget, targetRIRForGroup(ex.muscleGroup));
+    const equipment = eqMap.get((ex.exercise || "").toLowerCase()) || "";
+    const block = await renderExercise(meso, week, day, ex, setTarget, targetRIRForGroup(ex.muscleGroup), equipment);
     container.append(block);
   }
 }
 
-async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
+async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipment = "") {
+  const perDB = isDumbbell(equipment);
   const [logged, prev, history] = await Promise.all([
     data.sessionSets(meso.id, week, day.index, ex.exercise),
     data.previousTopSet(meso.id, day.index, ex.exercise, week),
@@ -455,6 +461,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
           analysis.confidence !== "new"
             ? el("span", { class: "pill" }, `↑ ${analysis.progression.label}/session`)
             : null,
+          perDB ? el("span", { class: "pill" }, "per dumbbell") : null,
         ),
       ),
     ),
@@ -552,7 +559,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     setsContainer.append(
       el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
         el("div", {}, "#"),
-        el("div", {}, `Weight (${unitLabel()})`),
+        el("div", {}, `Weight (${unitLabel()}${perDB ? ", per DB" : ""})`),
         el("div", {}, "Reps"),
         el("div", {}, "RIR"),
         el("div", {}, ""),
@@ -981,6 +988,8 @@ async function renderCustomMode(root, onFinish) {
 
   function buildCustomBlock(ex, refreshLive) {
     let editingSetId = null;
+    const equipment = exerciseLib.find((e) => normalizeName(e.name) === normalizeName(ex.exercise))?.equipment || "";
+    const perDB = isDumbbell(equipment);
     const block = el("div", { class: "exercise-block" });
     block.append(
       el("div", { class: "exercise-head" },
@@ -988,6 +997,7 @@ async function renderCustomMode(root, onFinish) {
           el("h3", {}, ex.exercise),
           el("div", { class: "exercise-meta" },
             el("span", { class: "pill" }, formatMuscle(ex.muscleGroup)),
+            perDB ? el("span", { class: "pill" }, "per dumbbell") : null,
             MUSCLE_REFERENCE[ex.muscleGroup]
               ? el("span", { class: "muted small" }, `${MUSCLE_REFERENCE[ex.muscleGroup].repRange} reps · ${MUSCLE_REFERENCE[ex.muscleGroup].rest} rest`)
               : null,
@@ -1069,7 +1079,7 @@ async function renderCustomMode(root, onFinish) {
       setsContainer.append(
         el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
           el("div", {}, "#"),
-          el("div", {}, `Weight (${unitLabel()})`),
+          el("div", {}, `Weight (${unitLabel()}${perDB ? ", per DB" : ""})`),
           el("div", {}, "Reps"),
           el("div", {}, "RIR"),
           el("div", {}, ""),
@@ -1200,6 +1210,10 @@ async function renderCustomMode(root, onFinish) {
 export async function renderSummary(container, mesoId, date, onBack) {
   const today = date;
   const allSets = await data.listSets();
+  const eqMap = await data.getEquipmentMap();
+  // Dumbbell tonnage counts both implements; per-set volume helper.
+  const setVol = (s) => (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase()));
+  const isDb = (name) => isDumbbell(eqMap.get((name || "").toLowerCase()));
   const todaySets = allSets.filter((s) => s.date === today && s.mesoId === mesoId);
 
   const allSessions = await data.listSessions();
@@ -1241,8 +1255,8 @@ export async function renderSummary(container, mesoId, date, onBack) {
     muscleMap[s.muscleGroup] = (muscleMap[s.muscleGroup] || 0) + 1;
   }
 
-  // Volume
-  const totalVolume = todaySets.reduce((sum, s) => sum + (+s.weight * +s.reps), 0);
+  // Volume (dumbbell sets count both implements)
+  const totalVolume = todaySets.reduce((sum, s) => sum + setVol(s), 0);
 
   // Previous session volume
   const prevDates = [...new Set(
@@ -1252,7 +1266,7 @@ export async function renderSummary(container, mesoId, date, onBack) {
   if (prevDates.length) {
     prevVolume = allSets
       .filter((s) => s.mesoId === mesoId && s.date === prevDates[0])
-      .reduce((sum, s) => sum + (+s.weight * +s.reps), 0);
+      .reduce((sum, s) => sum + setVol(s), 0);
   }
 
   // Per-exercise highlights
@@ -1369,6 +1383,7 @@ export async function renderSummary(container, mesoId, date, onBack) {
         ),
         el("div", { class: "muted small" },
           `${h.sets} sets · Top: ${toDisplay(h.topWeight)} × ${h.topReps}`,
+          isDb(h.exercise) ? " per DB" : "",
           h.comparison ? ` (was ${toDisplay(h.comparison.prevWeight)} × ${h.comparison.prevReps})` : " (new)",
         ),
         perfPill(h.perf, true),

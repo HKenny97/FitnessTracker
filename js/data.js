@@ -416,6 +416,16 @@ export async function getFullExerciseLibrary() {
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Map of exercise name (lowercased) → equipment, across built-ins + custom.
+// Sets only store the exercise name, so views use this to recover equipment
+// (e.g. to label dumbbell lifts and double their volume).
+export async function getEquipmentMap() {
+  const lib = await getFullExerciseLibrary();
+  const map = new Map();
+  for (const e of lib) map.set((e.name || "").toLowerCase(), (e.equipment || "").toLowerCase());
+  return map;
+}
+
 // Cardio.
 export async function listCardio() {
   return cached("cardio", () => sheets.readAll("cardio"));

@@ -2,7 +2,7 @@ import { el, fmtDate, isoToday, stat, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
-import { toDisplay, unitLabel } from "../units.js";
+import { toDisplay, unitLabel, dbVolumeFactor } from "../units.js";
 
 function formatVolume(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -29,14 +29,17 @@ export async function render(container, { signedIn }) {
   }
 
   // --- Load all data upfront ---
-  const [mesos, allSets, allSessions, cardioEntries] = await Promise.all([
+  const [mesos, allSets, allSessions, cardioEntries, eqMap] = await Promise.all([
     data.listMesocycles(),
     data.listSets(),
     data.listSessions(),
     data.listCardio(),
+    data.getEquipmentMap(),
   ]);
   const activeMeso = mesos.find((m) => m.status === "active") || null;
   const today = isoToday();
+  // Dumbbell sets count both implements toward tonnage.
+  const setVol = (s) => (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase()));
 
   // --- Quick stats row ---
   const thisMonth = today.slice(0, 7);
@@ -199,7 +202,7 @@ export async function render(container, { signedIn }) {
         }
         const muscleGroups = Object.entries(mgCount).sort((a, b) => b[1] - a[1]).map(([mg]) => mg);
         // Total volume
-        const totalVol = sets.reduce((sum, s) => sum + (+s.weight || 0) * (+s.reps || 0), 0);
+        const totalVol = sets.reduce((sum, s) => sum + setVol(s), 0);
 
         const pills = el("div", { class: "muscle-pills" });
         for (const mg of muscleGroups) {
@@ -282,7 +285,7 @@ export async function render(container, { signedIn }) {
   // --- Enhancement 4: All-Time Stats ---
   if (allSets.length) {
     const uniqueDates = new Set(allSets.map((s) => s.date));
-    const totalVolume = allSets.reduce((sum, s) => sum + (+s.weight || 0) * (+s.reps || 0), 0);
+    const totalVolume = allSets.reduce((sum, s) => sum + setVol(s), 0);
     const uniqueExercises = new Set(allSets.map((s) => s.exercise));
 
     container.append(
