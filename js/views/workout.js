@@ -1312,6 +1312,8 @@ export async function renderSummary(container, mesoId, date, onBack) {
           ? el("span", { class: "verdict-delta" }, `${verdict.deltaPct > 0 ? "+" : ""}${verdict.deltaPct}%`)
           : null,
       ),
+      el("p", { class: "muted small verdict-caption" },
+        "“Normal” is your recent baseline for each lift: the median best estimated 1RM (weight × reps) of your last few sessions. The pill shows how today compares."),
     );
   }
 
