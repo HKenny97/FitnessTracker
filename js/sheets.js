@@ -145,6 +145,21 @@ function api() {
   return window.gapi.client.sheets;
 }
 
+// Resolve the workbook ID, creating one on first use. Idempotent and
+// concurrency-safe: simultaneous first writes share a single create.
+let pendingWorkbook = null;
+export async function ensureWorkbook() {
+  const existing = getSpreadsheetId();
+  if (existing) return existing;
+  if (isOffline()) {
+    throw new Error("Can't create your data sheet while offline — reconnect and try again.");
+  }
+  await ensureToken();
+  if (pendingWorkbook) return pendingWorkbook;
+  pendingWorkbook = createWorkbook().finally(() => { pendingWorkbook = null; });
+  return pendingWorkbook;
+}
+
 // Create the workbook, including all tabs and header rows.
 export async function createWorkbook() {
   const sheets = api();
@@ -321,6 +336,7 @@ async function appendOrQueue(key, values) {
     return { queued: true };
   }
   await ensureToken();
+  await ensureWorkbook();
   try {
     return await sendAppend(key, values);
   } catch (e) {
@@ -363,6 +379,7 @@ export async function flushOutbox() {
 // Overwrite a tab's contents (keeps header).
 export async function replaceAll(key, rows) {
   await ensureToken();
+  await ensureWorkbook();
   const id = getSpreadsheetId();
   const t = tab(key);
   // Clear everything below the header, then write fresh data.
@@ -389,6 +406,7 @@ export async function replaceAll(key, rows) {
 // Update or insert a single row matched by primary key column.
 export async function upsertRow(key, primaryKey, obj) {
   await ensureToken();
+  await ensureWorkbook();
   const all = await readAll(key);
   const headers = tab(key).headers;
   const idx = all.findIndex((r) => String(r[primaryKey]) === String(obj[primaryKey]));

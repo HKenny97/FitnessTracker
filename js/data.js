@@ -143,6 +143,14 @@ export async function createMesocycle({ name, startDate, weeks, days, notes }) {
 }
 
 export async function setMesocycleStatus(id, status) {
+  if (status === "active") {
+    const all = await listMesocycles();
+    for (const m of all) {
+      if (m.id !== id && m.status === "active") {
+        await sheets.upsertRow("mesocycles", "id", { id: m.id, status: "completed" });
+      }
+    }
+  }
   await sheets.upsertRow("mesocycles", "id", { id, status });
   invalidate("mesocycles");
 }
