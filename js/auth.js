@@ -171,45 +171,29 @@ export async function init() {
     },
   });
 
-  // Restore cached token — if valid, sign in silently with no popup.
+  // Restore the cached token and trust it while it's unexpired. We do NOT
+  // verify it against a network endpoint on boot: a spurious failure there
+  // (offline, timeout, transient error) must never throw away a valid
+  // session. A genuinely revoked or expired token is handled lazily — the
+  // first Sheets call 401s, withRetry calls ensureToken, and the UI
+  // self-heals to "Sign in" if a silent refresh can't complete.
   if (restoreToken()) {
     window.gapi.client.setToken({ access_token: accessToken });
-    // Verify the token is still accepted by Google.
-    try {
-      const r = await withTimeout(
-        fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }),
-        5000, "userinfo",
-      );
-      if (r.ok) {
-        const info = await r.json();
-        userEmail = info.email || userEmail;
-        cacheToken();
-        scheduleRefresh();
-        notify();
-        return;
-      }
-    } catch { /* fall through to normal flow */ }
+    scheduleRefresh();
+    notify();
+    // Best-effort: populate the signed-in email for the header. Never
+    // affects signed-in state, so failures here are ignored.
+    fetchUserInfo()
+      .then(() => { cacheToken(); notify(); })
+      .catch(() => {});
+    return;
+  }
 
-    // Token invalid — clear it and kick off a background silent refresh.
-    // Don't await: GSI silent refresh can hang indefinitely (3p cookies
-    // blocked, ambiguous account, Safari ITP, etc.) and we must not
-    // block boot on it. doSilentRefresh calls notify() on success, so
-    // the UI flips to signed-in automatically when it lands.
-    accessToken = null;
-    tokenExpiresAt = 0;
-    clearTokenCache();
-    window.gapi.client.setToken(null);
-
-    if (localStorage.getItem("rp.consentGiven")) {
-      doSilentRefresh().catch(() => { /* stays signed-out */ });
-    } else {
-      silentRestoreFailed = true;
-    }
-  } else if (localStorage.getItem("rp.consentGiven")) {
-    // No cached token at all, but user consented before — try silent
-    // refresh in the background (same rationale as above).
+  if (localStorage.getItem("rp.consentGiven")) {
+    // No valid cached token, but the user consented before — try a silent
+    // refresh in the background. Don't await: GIS silent refresh can hang
+    // (3p cookies blocked, ambiguous account, Safari ITP). doSilentRefresh
+    // calls notify() on success, so the UI flips to signed-in when it lands.
     doSilentRefresh().catch(() => { /* stays signed-out */ });
   }
 

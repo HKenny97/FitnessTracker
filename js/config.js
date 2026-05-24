@@ -16,7 +16,12 @@ export const config = {
 
   // OAuth scopes. `drive.file` is narrow — the app can only see sheets it
   // creates or that the user explicitly opens through Google Picker.
+  // `openid email profile` let the app read the signed-in user's email for
+  // display (the /userinfo endpoint requires them).
   scopes: [
+    "openid",
+    "email",
+    "profile",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
   ].join(" "),
