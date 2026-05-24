@@ -365,7 +365,7 @@ export async function renderNew(container) {
 
     day.exercises.forEach((ex, ei) => {
       card.append(
-        el("div", { class: "field-row", style: { marginTop: "0.5rem", alignItems: "end" } },
+        el("div", { class: "field-row exercise-edit-row", style: { marginTop: "0.5rem", alignItems: "end" } },
           el("div", {},
             el("label", {}, "Exercise"),
             buildExerciseInput(exerciseLib, ex, (name, group) => {
@@ -665,7 +665,7 @@ async function renderEdit(container, id) {
       );
       day.exercises.forEach((ex, ei) => {
         card.append(
-          el("div", { class: "field-row", style: { marginTop: "0.5rem", alignItems: "end" } },
+          el("div", { class: "field-row exercise-edit-row", style: { marginTop: "0.5rem", alignItems: "end" } },
             el("div", {},
               el("label", {}, "Exercise"),
               buildExerciseInput(exerciseLib, ex, (name, group) => {
