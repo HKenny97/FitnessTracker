@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check:substitutes": "node tools/check-substitutes.mjs"
+    "check:substitutes": "node tools/check-substitutes.mjs",
+    "check:parse": "node tools/check-parse-sets.mjs"
   }
 }

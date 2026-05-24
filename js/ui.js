@@ -42,6 +42,9 @@ export function fmtDate(s) {
   });
 }
 
+// Case/whitespace-insensitive name key for matching free-text exercise names.
+export const normalizeName = (s) => (s || "").trim().toLowerCase();
+
 export function isoToday() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

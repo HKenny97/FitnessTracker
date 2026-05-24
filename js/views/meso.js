@@ -1,4 +1,4 @@
-import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal } from "../ui.js";
+import { el, isoToday, run, fmtDate, toast, withLoading, confirmModal, normalizeName } from "../ui.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, PROGRAM_TEMPLATES, EXERCISE_SUBSTITUTES, progressSets, progressRIR } from "../rp.js";
 import { navigate } from "../router.js";
@@ -39,7 +39,6 @@ function templateDaysPerWeek(tpl) {
 // Case/whitespace-insensitive substitute lookup, built once from the static
 // table. Slot names are free text and the table keys are display-cased, so we
 // normalize on both sides rather than rely on exact string equality.
-const normalizeName = (s) => (s || "").trim().toLowerCase();
 const SUBSTITUTES_BY_KEY = new Map(
   Object.entries(EXERCISE_SUBSTITUTES).map(([name, subs]) => [normalizeName(name), subs]),
 );

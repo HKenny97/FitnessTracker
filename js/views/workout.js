@@ -1,9 +1,10 @@
-import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat } from "../ui.js";
+import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets } from "../rp.js";
 import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight } from "../adaptive.js";
+import { parseSets } from "../parse-sets.js";
 
 export async function render(container) {
   const active = await data.getActiveMesocycle();
@@ -261,9 +262,44 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
   }
 
   const setsContainer = el("div", {});
-  block.append(setsContainer);
-
   const drafts = [];
+
+  // Quick entry: type set shorthand (e.g. "225x5/5/4 r2") to fill the draft
+  // rows below for review before logging. The exercise is fixed here, so any
+  // leading name in the text is ignored.
+  const quickInput = el("input", {
+    type: "text", autocomplete: "off",
+    placeholder: "Quick add — e.g. 225x5/5/4 r2",
+    style: { flex: "1" },
+  });
+  function applyQuick() {
+    const res = parseSets(quickInput.value);
+    if (!res.sets.length) {
+      toast(res.errors.length ? `Couldn't parse "${res.errors[0].segment}"` : "Nothing to parse", "bad");
+      return;
+    }
+    for (const set of res.sets) {
+      drafts.push({
+        weight: set.weight != null ? String(set.weight) : (suggested || ""),
+        reps: set.reps != null ? String(set.reps) : "",
+        rir: set.rir != null ? String(set.rir) : String(targetRIR),
+      });
+    }
+    if (res.errors.length) toast(`Skipped ${res.errors.length} unparseable part(s)`, "bad");
+    quickInput.value = "";
+    renderSets();
+  }
+  quickInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); applyQuick(); }
+  });
+  block.append(
+    el("div", { class: "row", style: { gap: "0.4rem", marginBottom: "0.5rem" } },
+      quickInput,
+      el("button", { class: "btn small", onclick: applyQuick }, "Parse"),
+    ),
+    setsContainer,
+  );
+
   function renderSets() {
     setsContainer.replaceChildren();
     setsContainer.append(
@@ -467,6 +503,48 @@ async function renderCustomMode(root, onFinish) {
   const customRoot = el("div", {});
   root.append(customRoot);
 
+  // Resolve a typed exercise name to a library entry: exact match first, then
+  // a unique substring match. Returns null on no match or ambiguity, leaving
+  // the caller to fall back to the picker.
+  function resolveExercise(query) {
+    const q = normalizeName(query);
+    if (!q) return null;
+    const exact = exerciseLib.find((e) => normalizeName(e.name) === q);
+    if (exact) return exact;
+    const contains = exerciseLib.filter((e) => normalizeName(e.name).includes(q));
+    return contains.length === 1 ? contains[0] : null;
+  }
+
+  // Quick-log path: parse "<exercise> <sets>" (e.g. "bench 3x8 @185"), resolve
+  // the exercise, and append the parsed sets as unsaved rows for review.
+  function quickAddExercise(text) {
+    const res = parseSets(text);
+    if (!res.name) return toast('Lead with an exercise name, e.g. "bench 3x8 @185"', "bad");
+
+    const addSetsTo = (name, group) => {
+      let entry = exercises.find((e) => normalizeName(e.exercise) === normalizeName(name));
+      if (!entry) {
+        entry = { exercise: name, muscleGroup: group || "", sets: [] };
+        exercises.push(entry);
+      }
+      for (const set of res.sets) {
+        entry.sets.push({
+          weight: set.weight != null ? String(set.weight) : "",
+          reps: set.reps != null ? String(set.reps) : "",
+          rir: set.rir != null ? String(set.rir) : "",
+          saved: false,
+        });
+      }
+      if (res.errors.length) toast(`Skipped ${res.errors.length} unparseable part(s)`, "bad");
+      rerender();
+    };
+
+    const match = resolveExercise(res.name);
+    if (match) return addSetsTo(match.name, match.group);
+    toast(`No exact match for "${res.name}" — pick one`, "");
+    openExercisePicker({ exerciseLib, onPick: ({ name, group }) => addSetsTo(name, group) });
+  }
+
   function rerender() {
     customRoot.replaceChildren();
     customRoot.append(
@@ -475,6 +553,14 @@ async function renderCustomMode(root, onFinish) {
 
     customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
 
+    const quickEx = el("input", {
+      type: "text", autocomplete: "off",
+      placeholder: "Quick log — e.g. bench 3x8 @185",
+      style: { flex: "1" },
+    });
+    quickEx.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); quickAddExercise(quickEx.value); }
+    });
     customRoot.append(
       el("section", { class: "card" },
         el("h3", {}, "Add exercise"),
@@ -490,6 +576,10 @@ async function renderCustomMode(root, onFinish) {
             },
           }),
         }, "+ Add exercise"),
+        el("div", { class: "row", style: { gap: "0.4rem", marginTop: "0.5rem" } },
+          quickEx,
+          el("button", { class: "btn", onclick: () => quickAddExercise(quickEx.value) }, "Parse & add"),
+        ),
       ),
     );
 
@@ -535,7 +625,42 @@ async function renderCustomMode(root, onFinish) {
     );
 
     const setsContainer = el("div", {});
-    block.append(setsContainer);
+
+    // Quick add for an exercise already in the list: set-only shorthand fills
+    // unsaved rows for review (any leading name in the text is ignored here).
+    const blockQuick = el("input", {
+      type: "text", autocomplete: "off",
+      placeholder: "Quick add — e.g. 225x5/5/4 r2",
+      style: { flex: "1" },
+    });
+    function applyBlockQuick() {
+      const res = parseSets(blockQuick.value);
+      if (!res.sets.length) {
+        toast(res.errors.length ? `Couldn't parse "${res.errors[0].segment}"` : "Nothing to parse", "bad");
+        return;
+      }
+      for (const set of res.sets) {
+        ex.sets.push({
+          weight: set.weight != null ? String(set.weight) : "",
+          reps: set.reps != null ? String(set.reps) : "",
+          rir: set.rir != null ? String(set.rir) : "",
+          saved: false,
+        });
+      }
+      if (res.errors.length) toast(`Skipped ${res.errors.length} unparseable part(s)`, "bad");
+      blockQuick.value = "";
+      renderSets();
+    }
+    blockQuick.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyBlockQuick(); }
+    });
+    block.append(
+      el("div", { class: "row", style: { gap: "0.4rem", marginBottom: "0.5rem" } },
+        blockQuick,
+        el("button", { class: "btn small", onclick: applyBlockQuick }, "Parse"),
+      ),
+      setsContainer,
+    );
 
     function renderSets() {
       setsContainer.replaceChildren();
