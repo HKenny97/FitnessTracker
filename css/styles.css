@@ -892,8 +892,23 @@ input[type="number"] {
 }
 
 /* Set action buttons */
-.set-actions { display: flex; gap: 0.25rem; }
+.set-actions { display: flex; gap: 0.25rem; align-items: center; }
 .set-actions .btn { min-height: 28px; min-width: 28px; padding: 0.15rem; font-size: 0.75rem; }
+.set-type-btn { min-width: 42px !important; padding: 0.15rem 0.3rem !important; }
+.set-type-btn.warmup { color: var(--warn); border-color: var(--warn); }
+.set-type-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.set-type-tag.warmup { color: var(--warn); border-color: var(--warn); }
+.set-row.set-warmup { opacity: 0.7; }
 .set-row.editing, .set-detail.editing {
   background: var(--panel-2);
   border-radius: var(--radius-sm);

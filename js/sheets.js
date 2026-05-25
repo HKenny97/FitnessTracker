@@ -93,6 +93,7 @@ const TABS = {
       "reps",
       "rir",
       "notes",
+      "setType",
     ],
   },
   sessions: {
@@ -215,6 +216,34 @@ export async function ensureTabs(spreadsheetId) {
         })),
       },
     });
+  }
+
+  // Header migration: reconcile header rows of tabs that already existed so
+  // schema additions (e.g. a new trailing column) land in a labelled column.
+  // readAll keys rows off the sheet's own header row, so an unlabelled column
+  // would be dropped on read.
+  const present = Object.values(TABS).filter((t) => existing.has(t.title));
+  if (present.length) {
+    const headerRows = await withRetry(() =>
+      sheets.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges: present.map((t) => `${t.title}!1:1`),
+      }),
+    );
+    const ranges = headerRows.result.valueRanges || [];
+    const patches = [];
+    present.forEach((t, i) => {
+      const live = (ranges[i] && ranges[i].values && ranges[i].values[0]) || [];
+      if (live.length < t.headers.length) {
+        patches.push({ range: `${t.title}!A1`, values: [t.headers] });
+      }
+    });
+    if (patches.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        resource: { valueInputOption: "RAW", data: patches },
+      });
+    }
   }
   return meta.result;
 }

@@ -14,6 +14,35 @@ import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
 import { drawDonut } from "../chart.js";
 import { warmupSets } from "../warmup.js";
 
+// Per-set intensifier tags. "warmup" is excluded from volume/analytics; every
+// other type counts as one working set.
+const SET_TYPES = ["working", "warmup", "drop", "myorep", "failure"];
+const SET_TYPE_LABEL = { working: "Work", warmup: "Warm", drop: "Drop", myorep: "Myo", failure: "Fail" };
+const countsAsWorking = (t) => (t || "working") !== "warmup";
+
+// A small button that cycles a draft row's set type in place (no re-render, so
+// input focus is preserved). Mutates `draft.setType`.
+function setTypeButton(draft) {
+  if (!draft.setType) draft.setType = "working";
+  const btn = el("button", { type: "button", class: "btn small ghost set-type-btn", title: "Set type (tap to cycle)" });
+  const paint = () => {
+    btn.textContent = SET_TYPE_LABEL[draft.setType];
+    btn.classList.toggle("warmup", draft.setType === "warmup");
+  };
+  btn.onclick = () => {
+    draft.setType = SET_TYPES[(SET_TYPES.indexOf(draft.setType) + 1) % SET_TYPES.length];
+    paint();
+  };
+  paint();
+  return btn;
+}
+
+// Small static tag shown on a logged non-working set (null for working sets).
+function setTypeTag(setType) {
+  if (!setType || setType === "working") return null;
+  return el("span", { class: "set-type-tag" + (setType === "warmup" ? " warmup" : "") }, SET_TYPE_LABEL[setType] || setType);
+}
+
 // Quantitative tail for a detailed chip, tailored to what drove the read.
 function perfQuantText(perf) {
   const u = unitLabel();
@@ -542,7 +571,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
     if (!base) return toast("Set a working weight first", "bad");
     const ramp = warmupSets(toDisplay(base), config.displayUnit);
     if (!ramp.length) return toast("Working weight too light for warm-ups", "bad");
-    for (const s of ramp) drafts.push({ weight: String(s.weight), reps: String(s.reps), rir: "" });
+    for (const s of ramp) drafts.push({ weight: String(s.weight), reps: String(s.reps), rir: "", setType: "warmup" });
     renderSets();
   }
   block.append(
@@ -592,12 +621,13 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
         );
       } else {
         setsContainer.append(
-          el("div", { class: "set-row set-done" },
+          el("div", { class: "set-row set-done" + (s.setType === "warmup" ? " set-warmup" : "") },
             el("div", { class: "idx" }, i + 1),
             el("div", {}, toDisplay(s.weight)),
             el("div", {}, s.reps),
             el("div", {}, s.rir),
             el("div", { class: "set-actions" },
+              setTypeTag(s.setType),
               el("button", { class: "btn small ghost", "aria-label": "Edit set", onclick: () => { editingSetId = s.id; renderSets(); } }, "✏"),
               el("button", { class: "btn small danger ghost", "aria-label": "Delete set", onclick: () => {
                 confirmModal("Delete this set?", async () => {
@@ -637,12 +667,14 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
             value: d.rir,
             oninput: (e) => (d.rir = e.target.value),
           }),
-          logBtn,
+          el("div", { class: "set-actions" }, setTypeButton(d), logBtn),
         ),
       );
     });
 
-    const remaining = Math.max(0, setTarget - logged.length - drafts.length);
+    const loggedWorking = logged.filter((s) => countsAsWorking(s.setType)).length;
+    const draftsWorking = drafts.filter((d) => countsAsWorking(d.setType)).length;
+    const remaining = Math.max(0, setTarget - loggedWorking - draftsWorking);
     setsContainer.append(
       el("div", { class: "row", style: { marginTop: "0.6rem", justifyContent: "space-between" } },
         el("button", { class: "btn small", onclick: addDraft }, "+ Add set"),
@@ -676,6 +708,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
         weight: fromDisplay(d.weight),
         reps: +d.reps,
         rir: +d.rir,
+        setType: d.setType || "working",
         date: isoToday(),
       }),
       { ok: "Set logged" },
@@ -683,7 +716,9 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
     logged.push(saved);
     if (saved.setType !== "warmup") startRest(restSecondsFor(ex.muscleGroup));
     drafts.splice(idx, 1);
-    const remaining = Math.max(0, setTarget - logged.length - drafts.length);
+    const loggedWorking = logged.filter((s) => countsAsWorking(s.setType)).length;
+    const draftsWorking = drafts.filter((d) => countsAsWorking(d.setType)).length;
+    const remaining = Math.max(0, setTarget - loggedWorking - draftsWorking);
     if (remaining > 0 && !drafts.length) addDraft();
     renderSets();
     setTimeout(() => {
@@ -1063,7 +1098,7 @@ async function renderCustomMode(root, onFinish) {
       if (!base) return toast("Log a working set first", "bad");
       const ramp = warmupSets(toDisplay(base), config.displayUnit);
       if (!ramp.length) return toast("Working weight too light for warm-ups", "bad");
-      for (const s of ramp) ex.sets.push({ weight: String(s.weight), reps: String(s.reps), rir: "", saved: false });
+      for (const s of ramp) ex.sets.push({ weight: String(s.weight), reps: String(s.reps), rir: "", saved: false, setType: "warmup" });
       renderSets();
     }
     block.append(
@@ -1114,12 +1149,13 @@ async function renderCustomMode(root, onFinish) {
           );
         } else if (s.saved) {
           setsContainer.append(
-            el("div", { class: "set-row set-done" },
+            el("div", { class: "set-row set-done" + (s.setType === "warmup" ? " set-warmup" : "") },
               el("div", { class: "idx" }, i + 1),
               el("div", {}, toDisplay(s.weight)),
               el("div", {}, s.reps),
               el("div", {}, s.rir),
               el("div", { class: "set-actions" },
+                setTypeTag(s.setType),
                 el("button", { class: "btn small ghost", "aria-label": "Edit set", onclick: () => { editingSetId = s.id; renderSets(); } }, "✏"),
                 el("button", { class: "btn small danger ghost", "aria-label": "Delete set", onclick: () => {
                   confirmModal("Delete this set?", async () => {
@@ -1147,6 +1183,7 @@ async function renderCustomMode(root, onFinish) {
                 weight: fromDisplay(s.weight),
                 reps: +s.reps,
                 rir: +(s.rir || 0),
+                setType: s.setType || "working",
                 date: isoToday(),
               }),
               { ok: "Set logged" },
@@ -1176,7 +1213,7 @@ async function renderCustomMode(root, onFinish) {
                 placeholder: "RIR", value: s.rir,
                 oninput: (e) => (s.rir = e.target.value),
               }),
-              logBtn,
+              el("div", { class: "set-actions" }, setTypeButton(s), logBtn),
             ),
           );
         }
@@ -1216,7 +1253,7 @@ export async function renderSummary(container, mesoId, date, onBack) {
   const allSets = await data.listSets();
   const eqMap = await data.getEquipmentMap();
   // Dumbbell tonnage counts both implements; per-set volume helper.
-  const setVol = (s) => (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase()));
+  const setVol = (s) => (s.setType === "warmup" ? 0 : (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase())));
   const isDb = (name) => isDumbbell(eqMap.get((name || "").toLowerCase()));
   const todaySets = allSets.filter((s) => s.date === today && s.mesoId === mesoId);
 

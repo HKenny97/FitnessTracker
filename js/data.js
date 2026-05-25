@@ -273,10 +273,12 @@ export async function listSets() {
   return cached("sets", () => sheets.readAll("sets"));
 }
 
+// History for analytics/suggestions — warm-up sets are excluded so they don't
+// pollute progression, rep-range, e1RM, or fatigue reads.
 export async function getExerciseHistory(exercise) {
   const all = await listSets();
   return all
-    .filter(s => s.exercise === exercise)
+    .filter(s => s.exercise === exercise && s.setType !== "warmup")
     .sort((a, b) => a.date.localeCompare(b.date) || (+a.setNumber || 0) - (+b.setNumber || 0));
 }
 
@@ -294,6 +296,7 @@ export async function logSet(set) {
     reps: set.reps,
     rir: set.rir,
     notes: set.notes || "",
+    setType: set.setType || "working",
   };
   await sheets.appendRow("sets", row);
   invalidate("sets");
@@ -309,6 +312,7 @@ export async function previousTopSet(mesoId, dayIndex, exercise, week) {
       (s) =>
         s.mesoId === mesoId &&
         s.exercise === exercise &&
+        s.setType !== "warmup" &&
         // strictly earlier in the meso
         (+s.week < +week ||
           (+s.week === +week && +s.dayIndex < +dayIndex)),
@@ -467,6 +471,7 @@ export async function weeklyVolume(mesoId, week) {
   const out = {};
   for (const s of all) {
     if (s.mesoId !== mesoId || +s.week !== +week) continue;
+    if (s.setType === "warmup") continue;
     out[s.muscleGroup] = (out[s.muscleGroup] || 0) + 1;
   }
   return out;
@@ -593,6 +598,7 @@ export async function getPersonalRecords(exercise) {
   const prs = {};
   for (const s of all) {
     if (exercise && s.exercise !== exercise) continue;
+    if (s.setType === "warmup") continue;
     if (!prs[s.exercise]) prs[s.exercise] = { maxWeight: 0, maxReps: 0, max1RM: 0 };
     const pr = prs[s.exercise];
     const w = +s.weight, r = +s.reps;
@@ -610,6 +616,7 @@ export async function getRecentPRs(limit = 5) {
   const bestByEx = {};
   const prs = [];
   for (const s of sorted) {
+    if (s.setType === "warmup") continue;
     const w = +s.weight, r = +s.reps;
     const e1 = epley1RM(w, r);
     const prev = bestByEx[s.exercise];
