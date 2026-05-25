@@ -4,29 +4,49 @@ import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS } from "../rp.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
 import { openExercisePicker } from "../exercise-picker.js";
-import { analyze, adaptiveSuggestWeight, performanceVsNormal, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
+import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
 import { parseSets } from "../parse-sets.js";
 import { resolveExerciseName } from "../exercise-match.js";
 import { config } from "../config.js";
-import { toDisplay, fromDisplay, unitLabel } from "../units.js";
+import { toDisplay, fromDisplay, unitLabel, isDumbbell, dbVolumeFactor } from "../units.js";
 import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
 import { drawDonut } from "../chart.js";
 import { warmupSets } from "../warmup.js";
 
-// Performance-vs-normal pill from a performanceVsNormal() result. Returns null
-// when there's no baseline yet ("new"). Colours use the shared status tokens.
-function perfPill(perf) {
-  if (!perf || perf.level === "new") return null;
-  const map = {
-    above: { cls: "perf-above", txt: `▲ Above normal (+${perf.deltaPct}%)` },
-    on: { cls: "perf-on", txt: "On par with normal" },
-    below: { cls: "perf-below", txt: `▼ Below normal (${perf.deltaPct}%)` },
-  };
-  const c = map[perf.level];
+// Quantitative tail for a detailed chip, tailored to what drove the read.
+function perfQuantText(perf) {
+  const u = unitLabel();
+  const pct = perf.deltaPct ? ` (${perf.deltaPct > 0 ? "+" : ""}${perf.deltaPct}%)` : "";
+  const d = perf.detail;
+  if (d && perf.driver === "weight") {
+    return `${toDisplay(d.todayWeight)} vs ~${toDisplay(d.normalWeight)} ${u}${pct}`;
+  }
+  if (d && perf.driver === "reps") {
+    return `${d.todayReps} vs ~${d.normalReps} reps${pct}`;
+  }
+  if (perf.expectedE1RM) {
+    return `est. 1RM ${toDisplay(perf.actualE1RM)} vs ${toDisplay(perf.expectedE1RM)} ${u}${pct}`;
+  }
+  return pct.trim();
+}
+
+// Performance-vs-normal pill from a performanceReason() result. The text states
+// the qualitative driver (e.g. "Heavier top set than usual"); the arrow + colour
+// convey above/below. When `detailed`, a softer quantitative tail (numbers behind
+// the read) is appended. Returns null when there's no baseline yet ("new").
+function perfPill(perf, detailed = false) {
+  if (!perf || perf.level === "new" || !perf.phrase) return null;
+  const cls = perf.level === "above" ? "perf-above" : perf.level === "below" ? "perf-below" : "perf-on";
+  const arrow = perf.level === "above" ? "▲ " : perf.level === "below" ? "▼ " : "";
   const title = perf.expectedE1RM
     ? `Today's best est. 1RM ${toDisplay(perf.actualE1RM)} vs your normal ${toDisplay(perf.expectedE1RM)} ${unitLabel()}`
     : "";
-  return el("span", { class: "perf-pill " + c.cls, title }, c.txt);
+  const children = [arrow + perf.phrase];
+  if (detailed) {
+    const tail = perfQuantText(perf);
+    if (tail) children.push(el("span", { class: "perf-quant" }, " · " + tail));
+  }
+  return el("span", { class: "perf-pill " + cls, title }, ...children);
 }
 
 // Bottom-sheet plate calculator. `initialDisplay` is a weight in the current
@@ -48,10 +68,13 @@ function openPlateModal(initialDisplay) {
     if (!perSide.length) {
       result.append(el("div", {}, `Just the bar (${bar} ${unit}).`));
     } else {
-      result.append(el("div", {}, "Per side: " + perSide.map((p) => `${p.count}×${p.plate}`).join(", ")));
+      const perSideWeight = Math.round(((loadable - bar) / 2) * 100) / 100;
+      result.append(el("div", {},
+        "Per side: " + perSide.map((p) => `${p.count}×${p.plate}`).join(", ") + ` = ${perSideWeight} ${unit}`));
     }
     result.append(el("div", { class: "muted small" },
-      `Bar ${bar} ${unit}` + (leftover > 0 ? ` · loads to ${loadable} ${unit} (${leftover} ${unit}/side short)` : "")));
+      `Bar ${bar} ${unit} · total ${loadable} ${unit}`
+      + (leftover > 0 ? ` (${leftover} ${unit}/side short of ${t})` : "")));
   }
   input.addEventListener("input", compute);
 
@@ -368,6 +391,7 @@ function buildFeedbackCard(muscles, state) {
 async function renderSession(container, meso, week, day) {
   const plan = await data.getEffectiveWeekPlan(meso.id);
   const weekPlan = plan.filter((p) => p.week === week);
+  const eqMap = await data.getEquipmentMap();
 
   const byGroup = {};
   for (const ex of day.exercises) {
@@ -403,12 +427,14 @@ async function renderSession(container, meso, week, day) {
 
   for (const ex of day.exercises) {
     const setTarget = dayShareForExercise.get(ex.exercise + "|" + ex.index) || 0;
-    const block = await renderExercise(meso, week, day, ex, setTarget, targetRIRForGroup(ex.muscleGroup));
+    const equipment = eqMap.get((ex.exercise || "").toLowerCase()) || "";
+    const block = await renderExercise(meso, week, day, ex, setTarget, targetRIRForGroup(ex.muscleGroup), equipment);
     container.append(block);
   }
 }
 
-async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
+async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipment = "") {
+  const perDB = isDumbbell(equipment);
   const [logged, prev, history] = await Promise.all([
     data.sessionSets(meso.id, week, day.index, ex.exercise),
     data.previousTopSet(meso.id, day.index, ex.exercise, week),
@@ -436,6 +462,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
           analysis.confidence !== "new"
             ? el("span", { class: "pill" }, `↑ ${analysis.progression.label}/session`)
             : null,
+          perDB ? el("span", { class: "pill" }, "per dumbbell") : null,
         ),
       ),
     ),
@@ -471,15 +498,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
       el("div", { class: "muted small", style: { marginBottom: "0.5rem" } },
         `Est. 1RM ~${toDisplay(analysis.estimatedMax)} ${unitLabel()}${arrow}`),
     );
-  }
-
-  // Live performance-vs-normal read, refreshed as sets are logged.
-  const perfSlot = el("div", { style: { marginBottom: "0.5rem" } });
-  block.append(perfSlot);
-  function refreshPerf() {
-    const node = perfPill(performanceVsNormal(priorSets, logged));
-    perfSlot.replaceChildren();
-    if (node) perfSlot.append(node);
   }
 
   const setsContainer = el("div", {});
@@ -542,7 +560,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
     setsContainer.append(
       el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
         el("div", {}, "#"),
-        el("div", {}, `Weight (${unitLabel()})`),
+        el("div", {}, `Weight (${unitLabel()}${perDB ? ", per DB" : ""})`),
         el("div", {}, "Reps"),
         el("div", {}, "RIR"),
         el("div", {}, ""),
@@ -632,7 +650,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR) {
         ),
       ),
     );
-    refreshPerf();
   }
 
   function addDraft() {
@@ -972,6 +989,8 @@ async function renderCustomMode(root, onFinish) {
 
   function buildCustomBlock(ex, refreshLive) {
     let editingSetId = null;
+    const equipment = exerciseLib.find((e) => normalizeName(e.name) === normalizeName(ex.exercise))?.equipment || "";
+    const perDB = isDumbbell(equipment);
     const block = el("div", { class: "exercise-block" });
     block.append(
       el("div", { class: "exercise-head" },
@@ -979,6 +998,7 @@ async function renderCustomMode(root, onFinish) {
           el("h3", {}, ex.exercise),
           el("div", { class: "exercise-meta" },
             el("span", { class: "pill" }, formatMuscle(ex.muscleGroup)),
+            perDB ? el("span", { class: "pill" }, "per dumbbell") : null,
             MUSCLE_REFERENCE[ex.muscleGroup]
               ? el("span", { class: "muted small" }, `${MUSCLE_REFERENCE[ex.muscleGroup].repRange} reps · ${MUSCLE_REFERENCE[ex.muscleGroup].rest} rest`)
               : null,
@@ -994,8 +1014,7 @@ async function renderCustomMode(root, onFinish) {
       ),
     );
 
-    // Performance-vs-normal for custom mode: baseline from sessions before
-    // today, actual from today's already-logged (saved) sets.
+    // Est. 1RM + trend from sessions before today.
     const today = isoToday();
     const priorSets = allSets.filter((s) => s.exercise === ex.exercise && s.date < today);
     const priorBests = sessionBestE1RMs(priorSets);
@@ -1007,14 +1026,6 @@ async function renderCustomMode(root, onFinish) {
         el("div", { class: "muted small", style: { marginBottom: "0.5rem" } },
           `Est. 1RM ~${toDisplay(Math.round(estMax * 10) / 10)} ${unitLabel()}${arrow}`),
       );
-    }
-    const perfSlot = el("div", { style: { marginBottom: "0.5rem" } });
-    block.append(perfSlot);
-    function refreshPerf() {
-      const liveToday = ex.sets.filter((s) => s.saved).map((s) => ({ weight: +s.weight, reps: +s.reps }));
-      const node = perfPill(performanceVsNormal(priorSets, liveToday));
-      perfSlot.replaceChildren();
-      if (node) perfSlot.append(node);
     }
 
     const setsContainer = el("div", {});
@@ -1069,7 +1080,7 @@ async function renderCustomMode(root, onFinish) {
       setsContainer.append(
         el("div", { class: "set-row", style: { color: "var(--muted)", fontSize: "0.75rem" } },
           el("div", {}, "#"),
-          el("div", {}, `Weight (${unitLabel()})`),
+          el("div", {}, `Weight (${unitLabel()}${perDB ? ", per DB" : ""})`),
           el("div", {}, "Reps"),
           el("div", {}, "RIR"),
           el("div", {}, ""),
@@ -1183,7 +1194,6 @@ async function renderCustomMode(root, onFinish) {
           },
         }, "+ Add set"),
       );
-      refreshPerf();
     }
 
     if (!ex.sets.some((s) => !s.saved)) {
@@ -1201,6 +1211,10 @@ async function renderCustomMode(root, onFinish) {
 export async function renderSummary(container, mesoId, date, onBack) {
   const today = date;
   const allSets = await data.listSets();
+  const eqMap = await data.getEquipmentMap();
+  // Dumbbell tonnage counts both implements; per-set volume helper.
+  const setVol = (s) => (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase()));
+  const isDb = (name) => isDumbbell(eqMap.get((name || "").toLowerCase()));
   const todaySets = allSets.filter((s) => s.date === today && s.mesoId === mesoId);
 
   const allSessions = await data.listSessions();
@@ -1242,8 +1256,8 @@ export async function renderSummary(container, mesoId, date, onBack) {
     muscleMap[s.muscleGroup] = (muscleMap[s.muscleGroup] || 0) + 1;
   }
 
-  // Volume
-  const totalVolume = todaySets.reduce((sum, s) => sum + (+s.weight * +s.reps), 0);
+  // Volume (dumbbell sets count both implements)
+  const totalVolume = todaySets.reduce((sum, s) => sum + setVol(s), 0);
 
   // Previous session volume
   const prevDates = [...new Set(
@@ -1253,7 +1267,7 @@ export async function renderSummary(container, mesoId, date, onBack) {
   if (prevDates.length) {
     prevVolume = allSets
       .filter((s) => s.mesoId === mesoId && s.date === prevDates[0])
-      .reduce((sum, s) => sum + (+s.weight * +s.reps), 0);
+      .reduce((sum, s) => sum + setVol(s), 0);
   }
 
   // Per-exercise highlights
@@ -1279,8 +1293,9 @@ export async function renderSummary(container, mesoId, date, onBack) {
       };
     }
 
-    // Performance vs. recent normal (more robust than the single-session delta).
-    const perf = performanceVsNormal(
+    // Performance vs. recent normal (more robust than the single-session delta),
+    // with a qualitative driver phrase for the pill.
+    const perf = performanceReason(
       allSets.filter((s) => s.exercise === exercise && s.date < today),
       exSets,
     );
@@ -1313,6 +1328,8 @@ export async function renderSummary(container, mesoId, date, onBack) {
           ? el("span", { class: "verdict-delta" }, `${verdict.deltaPct > 0 ? "+" : ""}${verdict.deltaPct}%`)
           : null,
       ),
+      el("p", { class: "muted small verdict-caption" },
+        "“Normal” is your recent baseline for each lift: the median best estimated 1RM (weight × reps) of your last few sessions. Each pill flags how today's top set compared."),
     );
   }
 
@@ -1377,9 +1394,10 @@ export async function renderSummary(container, mesoId, date, onBack) {
         ),
         el("div", { class: "muted small" },
           `${h.sets} sets · Top: ${toDisplay(h.topWeight)} × ${h.topReps}`,
+          isDb(h.exercise) ? " per DB" : "",
           h.comparison ? ` (was ${toDisplay(h.comparison.prevWeight)} × ${h.comparison.prevReps})` : " (new)",
         ),
-        perfPill(h.perf),
+        perfPill(h.perf, true),
       ),
     );
   }

@@ -143,6 +143,14 @@ export async function createMesocycle({ name, startDate, weeks, days, notes }) {
 }
 
 export async function setMesocycleStatus(id, status) {
+  if (status === "active") {
+    const all = await listMesocycles();
+    for (const m of all) {
+      if (m.id !== id && m.status === "active") {
+        await sheets.upsertRow("mesocycles", "id", { id: m.id, status: "completed" });
+      }
+    }
+  }
   await sheets.upsertRow("mesocycles", "id", { id, status });
   invalidate("mesocycles");
 }
@@ -414,6 +422,16 @@ export async function getFullExerciseLibrary() {
   for (const e of EXERCISE_LIBRARY) byName.set(e.name.toLowerCase(), e);
   for (const c of custom) byName.set(c.name.toLowerCase(), { name: c.name, group: c.group, equipment: c.equipment });
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Map of exercise name (lowercased) → equipment, across built-ins + custom.
+// Sets only store the exercise name, so views use this to recover equipment
+// (e.g. to label dumbbell lifts and double their volume).
+export async function getEquipmentMap() {
+  const lib = await getFullExerciseLibrary();
+  const map = new Map();
+  for (const e of lib) map.set((e.name || "").toLowerCase(), (e.equipment || "").toLowerCase());
+  return map;
 }
 
 // Cardio.

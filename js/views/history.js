@@ -3,18 +3,21 @@ import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { drawChart } from "../chart.js";
 import { epley1RM } from "../rp.js";
-import { toDisplay, fromDisplay, unitLabel } from "../units.js";
+import { toDisplay, fromDisplay, unitLabel, isDumbbell, dbVolumeFactor } from "../units.js";
 import { renderSummary } from "./workout.js";
 
 export async function render(container) {
-  const [sessionsSrc, setsSrc, allMesos, cardioEntries] = await Promise.all([
+  const [sessionsSrc, setsSrc, allMesos, cardioEntries, eqMap] = await Promise.all([
     data.listSessions(),
     data.listSets(),
     data.listMesocycles(),
     data.listCardio(),
+    data.getEquipmentMap(),
   ]);
   const sessions = [...sessionsSrc];
   const sets = [...setsSrc];
+  const isDb = (name) => isDumbbell(eqMap.get((name || "").toLowerCase()));
+  const setVol = (s) => (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase()));
 
   const mesoById = {};
   for (const m of allMesos) mesoById[m.id] = m;
@@ -127,6 +130,7 @@ export async function render(container) {
           el("div", {},
             el("strong", {}, exercise),
             el("span", { class: "pill small", style: { marginLeft: "0.5rem" } }, formatMuscle(exSets[0].muscleGroup)),
+            isDb(exercise) ? el("span", { class: "pill small", style: { marginLeft: "0.35rem" } }, "per DB") : null,
           ),
           comp,
         ),
@@ -185,7 +189,7 @@ export async function render(container) {
       detail.append(exBlock);
     }
 
-    const vol = dateSets.reduce((sum, s) => sum + (+s.weight * +s.reps), 0);
+    const vol = dateSets.reduce((sum, s) => sum + setVol(s), 0);
     detail.append(
       el("div", { class: "volume-summary" },
         el("span", { class: "muted" }, "Total volume: "),

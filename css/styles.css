@@ -770,7 +770,10 @@ input[type="number"] {
   font-size: 0.78rem;
   font-weight: 600;
   border: 1px solid transparent;
+  max-width: 100%;
+  white-space: normal;
 }
+.perf-quant { font-weight: 500; opacity: 0.85; }
 .perf-above { color: var(--ok); background: rgba(57, 181, 74, 0.12); border-color: rgba(57, 181, 74, 0.35); }
 .perf-on { color: var(--muted); background: var(--panel-2); }
 .perf-below { color: var(--warn); background: rgba(246, 183, 60, 0.12); border-color: rgba(246, 183, 60, 0.35); }
@@ -788,6 +791,7 @@ input[type="number"] {
   border: 1px solid var(--line);
   animation: verdict-in 0.35s ease-out both;
 }
+.verdict-caption { margin: -0.5rem auto 1rem; max-width: 32rem; }
 .verdict-text { font-size: 0.95rem; }
 .verdict-delta { font-variant-numeric: tabular-nums; opacity: 0.85; }
 .verdict-above { color: var(--ok); background: rgba(57, 181, 74, 0.1); border-color: rgba(57, 181, 74, 0.3); }

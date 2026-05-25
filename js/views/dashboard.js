@@ -2,7 +2,7 @@ import { el, fmtDate, isoToday, stat, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
-import { toDisplay, unitLabel } from "../units.js";
+import { toDisplay, unitLabel, dbVolumeFactor } from "../units.js";
 
 const DIST_COLORS = ["#39b54a", "#4da6ff", "#ffb547", "#c97bff", "#ff5a1f", "#36c4b7", "#f06292", "#9ccc65"];
 
@@ -62,14 +62,17 @@ export async function render(container, { signedIn }) {
   }
 
   // --- Load all data upfront ---
-  const [mesos, allSets, allSessions, cardioEntries] = await Promise.all([
+  const [mesos, allSets, allSessions, cardioEntries, eqMap] = await Promise.all([
     data.listMesocycles(),
     data.listSets(),
     data.listSessions(),
     data.listCardio(),
+    data.getEquipmentMap(),
   ]);
   const activeMeso = mesos.find((m) => m.status === "active") || null;
   const today = isoToday();
+  // Dumbbell sets count both implements toward tonnage.
+  const setVol = (s) => (+s.weight || 0) * (+s.reps || 0) * dbVolumeFactor(s.exercise, eqMap.get((s.exercise || "").toLowerCase()));
 
   // --- Quick stats ---
   const thisMonth = today.slice(0, 7);
@@ -235,7 +238,7 @@ export async function render(container, { signedIn }) {
           mgCount[mg] = (mgCount[mg] || 0) + 1;
         }
         const muscleGroups = Object.entries(mgCount).sort((a, b) => b[1] - a[1]).map(([mg]) => mg);
-        const totalVol = sets.reduce((sum, s) => sum + (+s.weight || 0) * (+s.reps || 0), 0);
+        const totalVol = sets.reduce((sum, s) => sum + setVol(s), 0);
 
         const pills = el("div", { class: "muscle-pills" });
         for (const mg of muscleGroups) pills.append(el("span", { class: "pill" }, formatMuscle(mg)));
@@ -311,7 +314,7 @@ export async function render(container, { signedIn }) {
   // All-Time Stats (full width)
   if (allSets.length) {
     const uniqueDates = new Set(allSets.map((s) => s.date));
-    const totalVolume = allSets.reduce((sum, s) => sum + (+s.weight || 0) * (+s.reps || 0), 0);
+    const totalVolume = allSets.reduce((sum, s) => sum + setVol(s), 0);
     const uniqueExercises = new Set(allSets.map((s) => s.exercise));
     grid.append(
       el("section", { class: "card span2" },

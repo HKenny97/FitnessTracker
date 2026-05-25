@@ -70,5 +70,7 @@ export async function getRecentPRs() {
   ];
 }
 
+export async function getEquipmentMap() { return new Map(); }
+
 export async function saveSession() { return { ok: true }; }
 export async function logSet() { return { ok: true }; }

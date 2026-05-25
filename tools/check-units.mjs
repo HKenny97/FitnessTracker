@@ -4,7 +4,7 @@
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 
 const { config } = await import("../js/config.js");
-const { toDisplay, fromDisplay, formatWeight, KG_PER_LB } = await import("../js/units.js");
+const { toDisplay, fromDisplay, formatWeight, KG_PER_LB, isDumbbell, dbVolumeFactor } = await import("../js/units.js");
 
 let failures = 0;
 const fail = (msg) => { failures++; console.error(`FAIL  ${msg}`); };
@@ -27,5 +27,16 @@ for (const lbs of [45, 135, 225, 315]) {
 if (!formatWeight(225).endsWith(" kg")) fail(`kg formatWeight(225) → ${formatWeight(225)}`);
 
 config.displayUnit = "lb";
+
+// Dumbbell labelling + volume factor.
+if (isDumbbell("dumbbell") !== true) fail(`isDumbbell("dumbbell") → ${isDumbbell("dumbbell")}`);
+if (isDumbbell("Dumbbell") !== true) fail(`isDumbbell case-insensitive → ${isDumbbell("Dumbbell")}`);
+if (isDumbbell("barbell") !== false) fail(`isDumbbell("barbell") → ${isDumbbell("barbell")}`);
+if (dbVolumeFactor("Dumbbell Bench Press", "dumbbell") !== 2) fail(`two-DB press factor → ${dbVolumeFactor("Dumbbell Bench Press", "dumbbell")}`);
+if (dbVolumeFactor("Barbell Bench Press", "barbell") !== 1) fail(`barbell factor → ${dbVolumeFactor("Barbell Bench Press", "barbell")}`);
+for (const single of ["Single-Arm Dumbbell Row", "One-Arm Dumbbell Row", "Concentration Curl", "Goblet Squat", "Dumbbell Pullover"]) {
+  if (dbVolumeFactor(single, "dumbbell") !== 1) fail(`single-implement "${single}" factor → ${dbVolumeFactor(single, "dumbbell")}`);
+}
+
 if (failures) { console.error(`\n${failures} unit check failure(s).`); process.exit(1); }
-console.log(`OK: unit conversions pass (KG_PER_LB=${KG_PER_LB}).`);
+console.log(`OK: unit conversions + dumbbell helpers pass (KG_PER_LB=${KG_PER_LB}).`);
