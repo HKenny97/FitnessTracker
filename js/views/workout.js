@@ -360,6 +360,21 @@ async function renderMesoMode(root, active, onFinish) {
 
   async function rerender() {
     await loadExistingSession();
+
+    // Auto-apply pending volume recommendations when the user opted in.
+    if (config.autoApplyVolume && chosenWeek >= 2) {
+      const pending = await data.getVolumeSuggestions(active.id, chosenWeek);
+      if (pending.length) {
+        for (const it of pending) {
+          await data.saveWeekPlanAdjustment({
+            mesoId: active.id, week: chosenWeek, muscleGroup: it.muscleGroup,
+            deltaSets: it.deltaSets, reason: it.reason,
+          });
+        }
+        toast(`Auto-applied ${pending.length} volume adjustment${pending.length === 1 ? "" : "s"}`, "ok");
+      }
+    }
+
     mesoRoot.replaceChildren();
     mesoRoot.append(
       el("div", { class: "muted", style: { marginBottom: "0.75rem" } }, active.name),
@@ -423,70 +438,50 @@ async function renderMesoMode(root, active, onFinish) {
     mesoRoot.append(finishBtn);
   }
 
-  // Per-muscle suggestion panel for the current week, from last week's feedback,
-  // logged volume, and landmarks. Only surfaces actionable (non-hold) changes
-  // not already accepted.
+  // Current-week volume recommendations (computed in the data layer), rendered
+  // via the shared card so the dashboard and workout view stay identical.
   async function buildSuggestionPanel() {
-    if (chosenWeek < 2) return null;
-    const prevWeek = chosenWeek - 1;
-    const [feedback, landmarks, effPlan, prevVol, adjustments] = await Promise.all([
-      data.getSessionFeedback(active.id),
-      data.getLandmarks(),
-      data.getEffectiveWeekPlan(active.id),
-      data.weeklyVolume(active.id, prevWeek),
-      data.getWeekPlanAdjustments(active.id),
-    ]);
-    const acceptedThisWeek = new Set(adjustments.filter((a) => a.week === chosenWeek).map((a) => a.muscleGroup));
-    const planThis = effPlan.filter((p) => p.week === chosenWeek);
-    const items = [];
-    for (const p of planThis) {
-      if (acceptedThisWeek.has(p.muscleGroup)) continue;
-      const fb = feedback.filter((f) => f.week === prevWeek && f.muscleGroup === p.muscleGroup);
-      if (!fb.length) continue;
-      const avg = (k) => Math.round(fb.reduce((n, f) => n + (f[k] || 0), 0) / fb.length);
-      const perfVals = fb.map((f) => f.performance).filter((v) => v != null);
-      const feedbackAvg = {
-        pump: avg("pump"), soreness: avg("soreness"), jointPain: avg("jointPain"),
-        performance: perfVals.length ? Math.round(perfVals.reduce((a, b) => a + b, 0) / perfVals.length) : 2,
-      };
-      const prevTarget = effPlan.find((x) => x.week === prevWeek && x.muscleGroup === p.muscleGroup)?.targetSets ?? p.targetSets;
-      const sug = suggestSetAdjustment({
-        feedback: feedbackAvg,
-        performedSets: prevVol[p.muscleGroup] || 0,
-        targetSets: prevTarget,
-        landmark: landmarks[p.muscleGroup] || {},
-      });
-      if (sug.deltaSets === 0 && sug.action !== "deload") continue;
-      items.push({ muscleGroup: p.muscleGroup, ...sug });
-    }
-    if (!items.length) return null;
-
-    const card = el("section", { class: "card" },
-      el("h3", {}, "Adjust this week"),
-      el("p", { class: "muted small" }, "Based on last week's feedback. Your original plan is preserved."),
-    );
-    for (const it of items) {
-      const label = it.action === "deload" ? "Apply deload"
-        : it.deltaSets > 0 ? `Add ${it.deltaSets}` : `Reduce ${Math.abs(it.deltaSets)}`;
-      const acceptBtn = el("button", { class: "btn small primary" }, label);
-      acceptBtn.onclick = withLoading(acceptBtn, async () => {
-        await run(data.saveWeekPlanAdjustment({
-          mesoId: active.id, week: chosenWeek, muscleGroup: it.muscleGroup,
-          deltaSets: it.deltaSets, reason: it.reason,
-        }), { ok: "Adjusted" });
-        rerender();
-      });
-      card.append(
-        el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem" } },
-          el("div", {}, el("strong", {}, formatMuscle(it.muscleGroup)), el("div", { class: "muted small" }, it.reason)),
-          acceptBtn,
-        ),
-      );
-    }
-    return card;
+    const items = await data.getVolumeSuggestions(active.id, chosenWeek);
+    return buildVolumeSuggestionCard(items, { mesoId: active.id, week: chosenWeek, onChange: rerender });
   }
 
   rerender();
+}
+
+// Renders the "Adjust this week" recommendations with per-muscle reasoning and
+// accept buttons. Shared by the workout view and the dashboard. Returns null
+// when there's nothing to suggest.
+export function buildVolumeSuggestionCard(items, { mesoId, week, onChange } = {}) {
+  if (!items || !items.length) return null;
+  const card = el("section", { class: "card" },
+    el("h3", {}, "Adjust this week"),
+    el("p", { class: "muted small" }, "Based on last week's feedback. Your original plan is preserved."),
+  );
+  for (const it of items) {
+    const label = it.action === "deload" ? "Apply deload"
+      : it.deltaSets > 0 ? `Add ${it.deltaSets}` : `Reduce ${Math.abs(it.deltaSets)}`;
+    const acceptBtn = el("button", { class: "btn small primary" }, label);
+    acceptBtn.onclick = withLoading(acceptBtn, async () => {
+      await run(data.saveWeekPlanAdjustment({
+        mesoId, week, muscleGroup: it.muscleGroup, deltaSets: it.deltaSets, reason: it.reason,
+      }), { ok: "Adjusted" });
+      onChange?.();
+    });
+    const fb = it.feedback || {};
+    const fbText = `pump ${fb.pump}/3 · sore ${fb.soreness}/3 · joint ${fb.jointPain}/3 · perf ${fb.performance}/3`
+      + (it.prevTarget != null ? ` · ${it.performedSets}/${it.prevTarget} sets last week` : "");
+    card.append(
+      el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem" } },
+        el("div", {},
+          el("strong", {}, formatMuscle(it.muscleGroup)),
+          el("div", { class: "muted small" }, it.reason),
+          el("div", { class: "muted small" }, fbText),
+        ),
+        acceptBtn,
+      ),
+    );
+  }
+  return card;
 }
 
 // 0–3 per-muscle feedback inputs for the just-finished session.

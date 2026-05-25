@@ -7,6 +7,7 @@ import {
   progressRIR,
   progressSets,
   epley1RM,
+  suggestSetAdjustment,
 } from "./rp.js";
 
 export const CUSTOM_MESO_ID = "_custom";
@@ -252,6 +253,48 @@ export async function saveWeekPlanAdjustment({ mesoId, week, muscleGroup, deltaS
     createdAt: new Date().toISOString(),
   });
   invalidate("weekPlanAdjustments");
+}
+
+// Per-muscle volume recommendations for `week`, derived from the prior week's
+// feedback, performed volume, and landmarks via suggestSetAdjustment. Excludes
+// "hold" outcomes and muscles already adjusted this week. Each item also carries
+// the feedback averages + performed/target sets so the UI can explain the call.
+// Shared by the workout view and the dashboard.
+export async function getVolumeSuggestions(mesoId, week) {
+  if (+week < 2) return [];
+  const prevWeek = +week - 1;
+  const [feedback, landmarks, effPlan, prevVol, adjustments] = await Promise.all([
+    getSessionFeedback(mesoId),
+    getLandmarks(),
+    getEffectiveWeekPlan(mesoId),
+    weeklyVolume(mesoId, prevWeek),
+    getWeekPlanAdjustments(mesoId),
+  ]);
+  const acceptedThisWeek = new Set(adjustments.filter((a) => a.week === +week).map((a) => a.muscleGroup));
+  const planThis = effPlan.filter((p) => p.week === +week);
+  const items = [];
+  for (const p of planThis) {
+    if (acceptedThisWeek.has(p.muscleGroup)) continue;
+    const fb = feedback.filter((f) => f.week === prevWeek && f.muscleGroup === p.muscleGroup);
+    if (!fb.length) continue;
+    const avg = (k) => Math.round(fb.reduce((n, f) => n + (f[k] || 0), 0) / fb.length);
+    const perfVals = fb.map((f) => f.performance).filter((v) => v != null);
+    const feedbackAvg = {
+      pump: avg("pump"), soreness: avg("soreness"), jointPain: avg("jointPain"),
+      performance: perfVals.length ? Math.round(perfVals.reduce((a, b) => a + b, 0) / perfVals.length) : 2,
+    };
+    const prevTarget = effPlan.find((x) => x.week === prevWeek && x.muscleGroup === p.muscleGroup)?.targetSets ?? p.targetSets;
+    const performedSets = prevVol[p.muscleGroup] || 0;
+    const sug = suggestSetAdjustment({
+      feedback: feedbackAvg,
+      performedSets,
+      targetSets: prevTarget,
+      landmark: landmarks[p.muscleGroup] || {},
+    });
+    if (sug.deltaSets === 0 && sug.action !== "deload") continue;
+    items.push({ muscleGroup: p.muscleGroup, ...sug, feedback: feedbackAvg, performedSets, prevTarget });
+  }
+  return items;
 }
 
 // Week plan with accepted adjustments folded into targetSets (clamped >= 0).

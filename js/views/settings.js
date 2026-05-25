@@ -1,5 +1,5 @@
 import { el, run, toast, withLoading, confirmModal, formatMuscle } from "../ui.js";
-import { config, setClientId, setDisplayUnit, setRestTimerEnabled, setRestTimerSound, isUsingDemoClientId } from "../config.js";
+import { config, setClientId, setDisplayUnit, setRestTimerEnabled, setRestTimerSound, setAutoApplyVolume, isUsingDemoClientId } from "../config.js";
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
@@ -46,6 +46,11 @@ export async function render(container) {
           el("span", { class: "muted small" }, "Sound"),
           toggle(() => config.restTimerSound, setRestTimerSound),
         ),
+      ),
+      el("div", { class: "field" },
+        el("label", {}, "Auto-apply volume adjustments"),
+        el("p", { class: "muted small" }, "Apply the weekly volume recommendations automatically when you start a workout, instead of accepting them yourself."),
+        toggle(() => config.autoApplyVolume, setAutoApplyVolume),
       ),
     ),
   );
@@ -155,10 +160,23 @@ export async function render(container) {
   // Volume landmarks editor.
   if (sheetId) {
     const landmarks = await data.getLandmarks();
+
+    // Current-week performed working sets per muscle, so the editable landmarks
+    // visibly relate to live volume (warm-ups already excluded by weeklyVolume).
+    const activeMeso = await data.getActiveMesocycle();
+    let weekVol = {};
+    if (activeMeso) {
+      const start = new Date(activeMeso.startDate);
+      const daysIn = Math.floor((Date.now() - start.getTime()) / 86400000);
+      const curWeek = Math.min(+activeMeso.weeks, Math.max(1, Math.floor(daysIn / 7) + 1));
+      weekVol = await data.weeklyVolume(activeMeso.id, curWeek);
+    }
+
     const card = el("section", { class: "card" },
       el("h2", {}, "Volume landmarks"),
       el("p", { class: "muted small" },
-        "Weekly working sets per muscle group. Defaults are pre-filled — adjust as you learn your own MEV and MRV."),
+        "Weekly working sets per muscle group. Defaults are pre-filled — adjust as you learn your own MEV and MRV."
+        + (activeMeso ? " “Now” is this week's logged working sets for the active mesocycle." : "")),
     );
     const table = el("table", { class: "meso-grid" });
     table.append(
@@ -167,7 +185,9 @@ export async function render(container) {
           el("th", { style: { textAlign: "left" } }, "Muscle"),
           el("th", {}, "MV"), el("th", {}, "MEV"),
           el("th", {}, "MAV lo"), el("th", {}, "MAV hi"),
-          el("th", {}, "MRV"), el("th", {}),
+          el("th", {}, "MRV"),
+          ...(activeMeso ? [el("th", {}, "Now")] : []),
+          el("th", {}),
         ),
       ),
     );
@@ -183,6 +203,7 @@ export async function render(container) {
         fields[k] = inp;
         row.append(el("td", {}, inp));
       }
+      if (activeMeso) row.append(el("td", { class: "muted" }, String(weekVol[g] || 0)));
       row.append(el("td", {},
         el("button", {
           class: "btn small",

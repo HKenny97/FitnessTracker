@@ -3,6 +3,7 @@ import * as data from "../data.js";
 import * as sheets from "../sheets.js";
 import { drawChart, sparkline } from "../chart.js";
 import { toDisplay, unitLabel, dbVolumeFactor } from "../units.js";
+import { buildVolumeSuggestionCard } from "./workout.js";
 
 const DIST_COLORS = ["#39b54a", "#4da6ff", "#ffb547", "#c97bff", "#ff5a1f", "#36c4b7", "#f06292", "#9ccc65"];
 
@@ -207,6 +208,17 @@ export async function render(container, { signedIn }) {
         el("a", { class: "btn primary", href: "#/workout", style: { marginTop: "1rem", width: "100%" } }, "Train this session"),
       ),
     );
+
+    // Volume recommendations from last week's feedback, surfaced here so they
+    // can be reviewed without entering a workout. Refreshes in place on accept.
+    const suggWrap = el("div", {});
+    container.append(suggWrap);
+    const refreshSuggestions = async () => {
+      const items = await data.getVolumeSuggestions(activeMeso.id, week);
+      const card = buildVolumeSuggestionCard(items, { mesoId: activeMeso.id, week, onChange: refreshSuggestions });
+      suggWrap.replaceChildren(...(card ? [card] : []));
+    };
+    await refreshSuggestions();
   } else {
     container.append(
       el("div", { class: "empty-state" },

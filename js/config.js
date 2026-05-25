@@ -44,6 +44,10 @@ export const config = {
   // Rest timer: auto-starts after logging a working set. Sound plays on expiry.
   restTimerEnabled: localStorage.getItem("gama.restTimer") !== "off",
   restTimerSound: localStorage.getItem("gama.restSound") !== "off",
+
+  // When on, weekly volume recommendations are applied automatically on entering
+  // a workout instead of waiting for the user to accept them. Default off.
+  autoApplyVolume: localStorage.getItem("gama.autoApplyVolume") === "on",
 };
 
 // Allow runtime override from the Settings page.
@@ -72,4 +76,9 @@ export function setRestTimerEnabled(on) {
 export function setRestTimerSound(on) {
   localStorage.setItem("gama.restSound", on ? "on" : "off");
   config.restTimerSound = !!on;
+}
+
+export function setAutoApplyVolume(on) {
+  localStorage.setItem("gama.autoApplyVolume", on ? "on" : "off");
+  config.autoApplyVolume = !!on;
 }
