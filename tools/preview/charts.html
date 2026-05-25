@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>chart.js preview</title>
+<link rel="stylesheet" href="/css/styles.css"/>
+<script src="/js/vendor/chart.umd.min.js"></script>
+<style>body{padding:1rem} .grid{display:grid;gap:1rem;grid-template-columns:1fr 1fr}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+</head>
+<body>
+<h1>chart.js render check</h1>
+<div class="grid">
+  <section class="card"><div class="sec-head"><span class="ic">📈</span><h3>Line — weight progression</h3></div>
+    <div class="chart-container"><canvas id="line" style="width:100%;height:220px"></canvas></div></section>
+  <section class="card"><div class="sec-head"><span class="ic">📊</span><h3>Bar — workout frequency</h3></div>
+    <div class="chart-container"><canvas id="bar" style="width:100%;height:220px"></canvas></div></section>
+  <section class="card"><div class="sec-head"><span class="ic">🍩</span><h3>Donut — muscle split</h3></div>
+    <div class="donut-box"><canvas id="donut"></canvas></div></section>
+  <section class="card"><div class="sec-head"><span class="ic">〰️</span><h3>Sparklines</h3></div>
+    <table class="meso-grid"><tbody>
+      <tr><td class="muscle">Chest</td><td class="sparkline-cell"><canvas id="sp1" style="width:80px;height:24px"></canvas></td></tr>
+      <tr><td class="muscle">Back</td><td class="sparkline-cell"><canvas id="sp2" style="width:80px;height:24px"></canvas></td></tr>
+    </tbody></table></section>
+</div>
+<script type="module">
+import { drawChart, sparkline, drawDonut } from "/js/chart.js";
+const ramp = Array.from({length:8},(_,i)=>({x:i,y:80+i*3+Math.round(Math.sin(i)*4)}));
+drawChart(document.getElementById("line"), [{label:"Bench e1RM", color:"#39b54a", points:ramp}], {xLabels:ramp.map((_,i)=>`W${i+1}`), yLabel:"kg"});
+const freq=[3,4,2,5,4,6,4,5].map((y,i)=>({x:i,y}));
+drawChart(document.getElementById("bar"), [{label:"Workouts", color:"#39b54a", points:freq}], {type:"bar", xLabels:freq.map((_,i)=>`W${i+1}`), yLabel:"days"});
+drawDonut(document.getElementById("donut"), [
+  {label:"Chest",value:9,color:"#39b54a"},{label:"Back",value:12,color:"#4da6ff"},
+  {label:"Quads",value:5,color:"#ffb547"},{label:"Delts",value:4,color:"#c97bff"}]);
+sparkline(document.getElementById("sp1"), [3,4,5,7,9].map((y,i)=>({x:i,y})), "#39b54a");
+sparkline(document.getElementById("sp2"), [2,3,3,5,8].map((y,i)=>({x:i,y})), "#39b54a");
+window.__ready = true;
+</script>
+</body>
+</html>

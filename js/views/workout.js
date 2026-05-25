@@ -10,6 +10,7 @@ import { resolveExerciseName } from "../exercise-match.js";
 import { config } from "../config.js";
 import { toDisplay, fromDisplay, unitLabel, isDumbbell, dbVolumeFactor } from "../units.js";
 import { platesPerSide, defaultBar, defaultPlates } from "../plates.js";
+import { drawDonut } from "../chart.js";
 import { warmupSets } from "../warmup.js";
 
 // Quantitative tail for a detailed chip, tailored to what drove the read.
@@ -1352,13 +1353,23 @@ export async function renderSummary(container, mesoId, date, onBack) {
     );
   }
 
-  // Muscles
+  // Muscles — donut split + pills
   const muscleEntries = Object.entries(muscleMap).sort((a, b) => b[1] - a[1]);
-  summary.append(
-    el("div", { class: "history-muscles", style: { justifyContent: "center", marginBottom: "0.75rem" } },
-      ...muscleEntries.map(([g, n]) => el("span", { class: "pill small" }, `${formatMuscle(g)} (${n})`)),
-    ),
-  );
+  const DONUT_COLORS = ["#39b54a", "#4da6ff", "#ffb547", "#c97bff", "#ff5a1f", "#36c4b7", "#f06292", "#9ccc65"];
+  if (muscleEntries.length > 1) {
+    const donutCanvas = el("canvas", {});
+    summary.append(el("div", { class: "donut-box" }, donutCanvas));
+    requestAnimationFrame(() => drawDonut(
+      donutCanvas,
+      muscleEntries.map(([g, n], i) => ({ label: formatMuscle(g), value: n, color: DONUT_COLORS[i % DONUT_COLORS.length] })),
+    ));
+  } else {
+    summary.append(
+      el("div", { class: "history-muscles", style: { justifyContent: "center", marginBottom: "0.75rem" } },
+        ...muscleEntries.map(([g, n]) => el("span", { class: "pill small" }, `${formatMuscle(g)} (${n})`)),
+      ),
+    );
+  }
 
   // Exercise highlights
   summary.append(el("h3", { style: { marginTop: "1rem" } }, "Exercise highlights"));

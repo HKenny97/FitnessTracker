@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>view preview</title>
+<link rel="stylesheet" href="/css/styles.css"/>
+<script src="/js/vendor/chart.umd.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "/js/data.js": "/tools/preview/mock-data.js",
+  "/js/sheets.js": "/tools/preview/mock-sheets.js"
+} }
+</script>
+</head>
+<body>
+<main id="view"></main>
+<div id="toast" class="toast"></div>
+<script type="module">
+const view = new URLSearchParams(location.search).get("view") || "dashboard";
+const root = document.getElementById("view");
+const today = (() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+try {
+  if (view === "dashboard") {
+    const m = await import("/js/views/dashboard.js");
+    await m.render(root, { signedIn: true });
+  } else if (view === "custom") {
+    const m = await import("/js/views/custom.js");
+    await m.render(root);
+  } else if (view === "summary") {
+    const m = await import("/js/views/workout.js");
+    await m.renderSummary(root, "_custom", today, () => {});
+  }
+  window.__ready = true;
+} catch (e) {
+  root.innerHTML = "<pre style='color:#ef5350;white-space:pre-wrap'>" + (e.stack || e) + "</pre>";
+  window.__ready = true;
+}
+</script>
+</body>
+</html>
