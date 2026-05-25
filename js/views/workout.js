@@ -3,6 +3,7 @@ import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS, restSecondsFor } from "../rp.js";
 import { startRest } from "../timer.js";
+import { showFocusPad, hideFocusPad } from "../focuspad.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
 import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
@@ -305,6 +306,7 @@ export async function render(container) {
 
   async function fullRender() {
     root.replaceChildren();
+    hideFocusPad();
 
     if (summaryMode) {
       const mesoId = mode === "meso" ? active.id : CUSTOM_MESO_ID;
@@ -341,8 +343,10 @@ export async function render(container) {
         return;
       }
       await renderMesoMode(root, active, onFinish);
+      showFocusPad("meso");
     } else {
       await renderCustomMode(root, onFinish);
+      showFocusPad("custom");
     }
   }
 
@@ -753,9 +757,9 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
         setsContainer.append(
           el("div", { class: "set-row editing" },
             el("div", { class: "idx" }, i + 1),
-            el("input", { type: "number", inputmode: "decimal", step: "0.5", value: ed.weight, oninput: (e) => (ed.weight = e.target.value) }),
-            el("input", { type: "number", inputmode: "numeric", value: ed.reps, oninput: (e) => (ed.reps = e.target.value) }),
-            el("input", { type: "number", inputmode: "numeric", min: "0", max: "10", value: ed.rir, oninput: (e) => (ed.rir = e.target.value) }),
+            el("input", { type: "number", inputmode: "decimal", step: "0.5", "data-field": "weight", value: ed.weight, oninput: (e) => (ed.weight = e.target.value) }),
+            el("input", { type: "number", inputmode: "numeric", "data-field": "reps", value: ed.reps, oninput: (e) => (ed.reps = e.target.value) }),
+            el("input", { type: "number", inputmode: "numeric", min: "0", max: "10", "data-field": "rir", value: ed.rir, oninput: (e) => (ed.rir = e.target.value) }),
             el("div", { class: "set-actions" }, saveBtn, cancelBtn),
           ),
         );
@@ -790,19 +794,19 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
         el("div", { class: "set-row" },
           el("div", { class: "idx" }, setNo),
           el("input", {
-            type: "number", inputmode: "decimal", step: "0.5",
+            type: "number", inputmode: "decimal", step: "0.5", "data-field": "weight",
             placeholder: suggestedDisplay || "wt",
             value: d.weight,
             oninput: (e) => (d.weight = e.target.value),
           }),
           el("input", {
-            type: "number", inputmode: "numeric",
+            type: "number", inputmode: "numeric", "data-field": "reps",
             placeholder: prev?.reps || "reps",
             value: d.reps,
             oninput: (e) => (d.reps = e.target.value),
           }),
           el("input", {
-            type: "number", inputmode: "numeric", min: "0", max: "10",
+            type: "number", inputmode: "numeric", min: "0", max: "10", "data-field": "rir",
             placeholder: targetRIR,
             value: d.rir,
             oninput: (e) => (d.rir = e.target.value),
@@ -1304,9 +1308,9 @@ async function renderCustomMode(root, onFinish) {
           setsContainer.append(
             el("div", { class: "set-row editing" },
               el("div", { class: "idx" }, i + 1),
-              el("input", { type: "number", inputmode: "decimal", step: "0.5", value: ed.weight, oninput: (e) => (ed.weight = e.target.value) }),
-              el("input", { type: "number", inputmode: "numeric", value: ed.reps, oninput: (e) => (ed.reps = e.target.value) }),
-              el("input", { type: "number", inputmode: "numeric", min: "0", max: "10", value: ed.rir, oninput: (e) => (ed.rir = e.target.value) }),
+              el("input", { type: "number", inputmode: "decimal", step: "0.5", "data-field": "weight", value: ed.weight, oninput: (e) => (ed.weight = e.target.value) }),
+              el("input", { type: "number", inputmode: "numeric", "data-field": "reps", value: ed.reps, oninput: (e) => (ed.reps = e.target.value) }),
+              el("input", { type: "number", inputmode: "numeric", min: "0", max: "10", "data-field": "rir", value: ed.rir, oninput: (e) => (ed.rir = e.target.value) }),
               el("div", { class: "set-actions" }, saveBtn, cancelBtn),
             ),
           );
@@ -1362,17 +1366,17 @@ async function renderCustomMode(root, onFinish) {
             el("div", { class: "set-row" },
               el("div", { class: "idx" }, i + 1),
               el("input", {
-                type: "number", inputmode: "decimal", step: "0.5",
+                type: "number", inputmode: "decimal", step: "0.5", "data-field": "weight",
                 placeholder: "wt", value: s.weight,
                 oninput: (e) => (s.weight = e.target.value),
               }),
               el("input", {
-                type: "number", inputmode: "numeric",
+                type: "number", inputmode: "numeric", "data-field": "reps",
                 placeholder: "reps", value: s.reps,
                 oninput: (e) => (s.reps = e.target.value),
               }),
               el("input", {
-                type: "number", inputmode: "numeric", min: "0", max: "10",
+                type: "number", inputmode: "numeric", min: "0", max: "10", "data-field": "rir",
                 placeholder: "RIR", value: s.rir,
                 oninput: (e) => (s.rir = e.target.value),
               }),

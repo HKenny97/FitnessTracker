@@ -475,6 +475,46 @@ input[type="number"] {
 }
 .rest-timer-actions { display: flex; gap: 0.3rem; margin-left: auto; }
 
+/* Focused set-logging control pad */
+.focus-pad {
+  position: fixed;
+  left: 50%;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0));
+  transform: translateX(-50%) translateY(160%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 560px;
+  width: calc(100% - 1.5rem);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.4rem 0.6rem;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 90;
+}
+.focus-pad.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.focus-pad .btn.icon { min-width: 40px; min-height: 40px; font-size: 1.1rem; }
+.focus-pad-stepper, .focus-pad-value-btns, .focus-pad-nav { display: flex; align-items: center; gap: 0.3rem; }
+.focus-pad-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 4.5ch;
+  line-height: 1.05;
+}
+.focus-pad-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.focus-pad-value { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.15rem; }
+.focus-pad-nav { margin-left: auto; }
+.focus-pad.idle .focus-pad-readout { opacity: 0.5; }
+/* Lift the rest timer above the pad when both are visible. */
+body:has(.focus-pad.show) .rest-timer-bar { bottom: calc(4.5rem + env(safe-area-inset-bottom, 0)); }
+
 /* Banner */
 .banner {
   background: var(--panel-2);
