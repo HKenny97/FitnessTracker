@@ -96,14 +96,22 @@ function bump(dir) {
   paint();
 }
 function moveField(dir) {
-  const i = FIELDS.indexOf(activeField);
-  activeField = FIELDS[Math.min(FIELDS.length - 1, Math.max(0, i + dir))];
+  let i = FIELDS.indexOf(activeField);
+  if (i === -1) i = 0; // fallback to weight if activeField not found
+  i = Math.max(0, Math.min(FIELDS.length - 1, i + dir));
+  activeField = FIELDS[i];
   paint();
 }
 function step(dir) {
   if (!ctxList.length) return;
-  const i = activeCtx ? ctxList.indexOf(activeCtx) : -1;
-  const target = i === -1 ? ctxList[0] : ctxList[i + dir];
+  let i = activeCtx ? ctxList.indexOf(activeCtx) : -1;
+  // If no active context, start at first; otherwise calculate next index
+  if (i === -1) {
+    i = dir > 0 ? 0 : ctxList.length - 1;
+  } else {
+    i = Math.max(0, Math.min(ctxList.length - 1, i + dir));
+  }
+  const target = ctxList[i];
   if (target) setActiveExercise(target);
 }
 async function doCommit() {
@@ -126,7 +134,9 @@ function paint() {
     els.progressEl.textContent = "";
     els.valueInput.value = "";
     els.contextEl.textContent = "";
+    els.fieldLabel.textContent = "Weight";
     dropdownOpen = false;
+    expanded = false; // reset expanded when no context
     paintDropdown();
     els.panel.replaceChildren();
     return;
@@ -147,7 +157,7 @@ function paint() {
   els.typeBtn.style.display = typeLabel ? "" : "none";
   if (typeLabel) els.typeBtn.textContent = typeLabel;
   els.logBtn.textContent = c.isEditing() ? "Save" : "Log set";
-  els.logBtn.disabled = c.canLog() ? null : true;
+  els.logBtn.disabled = !c.canLog();
 
   paintDropdown();
   paintPanel();
@@ -210,8 +220,9 @@ export function setControllerExercises(list, m) {
   }
   barEl.classList.add("show");
   // Preserve the active exercise across re-registration (ctx objects are
-  // rebuilt each render but ids are stable).
-  const keep = activeCtx && ctxList.find((c) => c.id === activeCtx.id);
+  // rebuilt each render but ids are stable). Only preserve if the old context
+  // element is still in the document.
+  const keep = activeCtx && document.contains(activeCtx.cardEl) && ctxList.find((c) => c.id === activeCtx.id);
   if (keep) { activeCtx = keep; paint(); }
   else setActiveExercise(firstIncomplete() || ctxList[0]);
 }

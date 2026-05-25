@@ -151,6 +151,7 @@ export const EXERCISE_LIBRARY = [
   { name: "Single-Arm Cable Fly", group: "Chest", equipment: "cable" },
   { name: "Standing Cable Chest Press", group: "Chest", equipment: "cable" },
   { name: "Incline Cable Fly", group: "Chest", equipment: "cable" },
+  { name: "HS Chest Fly", group: "Chest", equipment: "hammer strength" },
   { name: "HS Iso-Lateral Bench Press", group: "Chest", equipment: "hammer strength" },
   { name: "HS Iso-Lateral Incline Press", group: "Chest", equipment: "hammer strength" },
   { name: "HS Iso-Lateral Decline Press", group: "Chest", equipment: "hammer strength" },
@@ -2611,6 +2612,57 @@ export const PROGRAM_TEMPLATES = [
           { exercise: "Reverse Pec Deck", muscleGroup: "Shoulders (rear delts)" },
           { exercise: "Incline Dumbbell Curl", muscleGroup: "Biceps" },
           { exercise: "Seated Calf Raise", muscleGroup: "Calves" },
+        ],
+      },
+    ],
+  },
+
+  // ─── Push / Pull / Legs / Arms (4-Day HS) ─────────────────
+  {
+    name: "Push / Pull / Legs / Arms (4-Day HS)",
+    days: [
+      {
+        name: "Push",
+        exercises: [
+          { exercise: "HS Iso-Lateral Bench Press", muscleGroup: "Chest" },
+          { exercise: "HS Chest Fly", muscleGroup: "Chest" },
+          { exercise: "HS Shoulder Press", muscleGroup: "Shoulders (front delts)" },
+          { exercise: "HS Lateral Raise", muscleGroup: "Shoulders (side delts)" },
+          { exercise: "HS Tricep Extension", muscleGroup: "Triceps" },
+          { exercise: "HS Dip", muscleGroup: "Triceps" },
+        ],
+      },
+      {
+        name: "Pull",
+        exercises: [
+          { exercise: "HS Iso-Lateral Row", muscleGroup: "Back" },
+          { exercise: "HS Lat Pulldown", muscleGroup: "Back" },
+          { exercise: "HS Iso-Lateral High Row", muscleGroup: "Back" },
+          { exercise: "HS Reverse Pec Deck", muscleGroup: "Shoulders (rear delts)" },
+          { exercise: "HS Bicep Curl", muscleGroup: "Biceps" },
+          { exercise: "HS Preacher Curl", muscleGroup: "Biceps" },
+        ],
+      },
+      {
+        name: "Legs",
+        exercises: [
+          { exercise: "HS Leg Press", muscleGroup: "Quads" },
+          { exercise: "HS Leg Extension", muscleGroup: "Quads" },
+          { exercise: "HS V-Squat", muscleGroup: "Quads" },
+          { exercise: "HS Lying Leg Curl", muscleGroup: "Hamstrings" },
+          { exercise: "HS Seated Leg Curl", muscleGroup: "Hamstrings" },
+          { exercise: "HS Standing Calf Raise", muscleGroup: "Calves" },
+        ],
+      },
+      {
+        name: "Arms",
+        exercises: [
+          { exercise: "HS Bicep Curl", muscleGroup: "Biceps" },
+          { exercise: "HS Iso-Lateral Preacher Curl", muscleGroup: "Biceps" },
+          { exercise: "HS Tricep Extension", muscleGroup: "Triceps" },
+          { exercise: "HS Iso-Lateral Tricep Extension", muscleGroup: "Triceps" },
+          { exercise: "HS Lateral Raise", muscleGroup: "Shoulders (side delts)" },
+          { exercise: "HS Standing Calf Raise", muscleGroup: "Calves" },
         ],
       },
     ],
