@@ -554,15 +554,19 @@ async function renderSession(container, meso, week, day) {
 
 async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipment = "") {
   const perDB = isDumbbell(equipment);
-  const [logged, prev, history] = await Promise.all([
+  const [logged, prev, history, override] = await Promise.all([
     data.sessionSets(meso.id, week, day.index, ex.exercise),
     data.previousTopSet(meso.id, day.index, ex.exercise, week),
     data.getExerciseHistory(ex.exercise),
+    data.getExerciseOverride(ex.exercise),
   ]);
 
-  const analysis = analyze(ex.exercise, history);
+  // A manual target-RIR override (from the Insights screen) wins over the plan.
+  if (override && override.targetRIR != null) targetRIR = override.targetRIR;
+
+  const analysis = analyze(ex.exercise, history, override || {});
   const suggested = prev
-    ? adaptiveSuggestWeight(prev, analysis.repRange.min, targetRIR, ex.exercise, history)
+    ? adaptiveSuggestWeight(prev, analysis.repRange.min, targetRIR, ex.exercise, history, override || {})
     : null;
 
   let editingSetId = null;
@@ -597,7 +601,8 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
     block.append(
       el("div", { class: "muted small", style: { marginBottom: "0.5rem" } },
         `Last session: ${toDisplay(prev.weight)} ${unitLabel()} × ${prev.reps} @ ${prev.rir} RIR`,
-        suggested ? ` · suggested ${toDisplay(suggested)} ${unitLabel()}` : "",
+        suggested ? ` · suggested ${toDisplay(suggested)} ${unitLabel()} ` : " ",
+        el("a", { class: "small", href: `#/insights/${encodeURIComponent(ex.exercise)}` }, "Why?"),
       ),
     );
   } else {

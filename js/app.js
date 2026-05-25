@@ -7,6 +7,7 @@ import * as workout from "./views/workout.js";
 import * as cardio from "./views/cardio.js";
 import * as history from "./views/history.js";
 import * as settings from "./views/settings.js";
+import * as insights from "./views/insights.js";
 import * as sheets from "./sheets.js";
 import { el, clear, toast } from "./ui.js";
 
@@ -112,6 +113,8 @@ route("/workout", wrap(async (root) => workout.render(root)));
 route("/cardio", wrap(async (root) => cardio.render(root)));
 route("/history", wrap(async (root) => history.render(root)));
 route("/settings", wrap(async (root) => settings.render(root)));
+route("/insights", wrap(async (root) => insights.render(root, {})));
+route("/insights/:exercise", wrap(async (root, p) => insights.render(root, { exercise: p.exercise })));
 
 onRender((handler, params) => handler(params));
 

@@ -206,6 +206,7 @@ export async function render(container, { signedIn }) {
           el("tbody", {}, ...volumeRows),
         ),
         el("a", { class: "btn primary", href: "#/workout", style: { marginTop: "1rem", width: "100%" } }, "Train this session"),
+        el("a", { class: "muted small", href: "#/insights", style: { display: "block", marginTop: "0.5rem", textAlign: "center" } }, "Why these numbers?"),
       ),
     );
 

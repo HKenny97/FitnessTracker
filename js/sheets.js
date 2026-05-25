@@ -128,6 +128,10 @@ const TABS = {
     title: "WeekPlanAdjustments",
     headers: ["id", "mesoId", "week", "muscleGroup", "deltaSets", "reason", "createdAt"],
   },
+  exerciseOverrides: {
+    title: "ExerciseOverrides",
+    headers: ["exercise", "progressionRate", "repMin", "repMax", "targetRIR", "updatedAt"],
+  },
 };
 
 export function getSpreadsheetId() {

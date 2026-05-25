@@ -17,6 +17,7 @@
     "check:outbox": "node tools/check-outbox.mjs",
     "check:seed": "node tools/check-seed.mjs",
     "check:rest": "node tools/check-rest.mjs",
-    "check:planner": "node tools/check-planner.mjs"
+    "check:planner": "node tools/check-planner.mjs",
+    "check:overrides": "node tools/check-overrides.mjs"
   }
 }

@@ -33,7 +33,7 @@ const FATIGUE_REGRESSION_SESSIONS = 2; // sessions with declining weight
 //   stats:           { ... },                   // raw computed stats
 // }
 
-export function analyze(exerciseName, allSets) {
+export function analyze(exerciseName, allSets, overrides = {}) {
   const profile = getProfile(exerciseName);
   const sessions = groupIntoSessions(allSets);
   const sessionCount = sessions.length;
@@ -52,10 +52,20 @@ export function analyze(exerciseName, allSets) {
   stats.bestE1RM = computeBestE1RM(allSets);
 
   // Blend adaptive results with defaults based on confidence
-  const progression = blendProgression(profile, stats, confidence);
-  const repRange = blendRepRange(profile, stats, confidence);
+  let progression = blendProgression(profile, stats, confidence);
+  let repRange = blendRepRange(profile, stats, confidence);
   const rest = blendRest(profile, stats, confidence);
   const fatigueWarning = formatFatigueWarning(stats.fatigue);
+
+  // Manual overrides win over the blended values (see ExerciseOverrides).
+  const ovRate = Number(overrides.progressionRate);
+  if (Number.isFinite(ovRate) && ovRate >= 0) {
+    progression = { rate: ovRate, label: `${(ovRate * 100).toFixed(1)}%`, source: "manual" };
+  }
+  const ovMin = Number(overrides.repMin), ovMax = Number(overrides.repMax);
+  if (Number.isFinite(ovMin) && Number.isFinite(ovMax) && ovMin > 0 && ovMax >= ovMin) {
+    repRange = { min: ovMin, max: ovMax, label: `${ovMin}–${ovMax}`, source: "manual" };
+  }
 
   const lastTop = stats.topSets.length
     ? stats.topSets[stats.topSets.length - 1]
@@ -83,7 +93,7 @@ export function analyze(exerciseName, allSets) {
 // Drop-in replacement for suggestWeight(). Uses personal
 // progression rate when available.
 
-export function adaptiveSuggestWeight(prev, targetReps, targetRIR, exerciseName, allSets) {
+export function adaptiveSuggestWeight(prev, targetReps, targetRIR, exerciseName, allSets, overrides = {}) {
   if (!prev || !prev.weight) return null;
 
   const profile = getProfile(exerciseName);
@@ -101,10 +111,13 @@ export function adaptiveSuggestWeight(prev, targetReps, targetRIR, exerciseName,
   const topSets = sessions.map(topSetOfSession);
   const personalRate = computeProgressionRate(topSets);
 
-  // Pick rate: personal if calibrated, else static default
-  const baseRate = (sessions.length >= MIN_SESSIONS_LEARNING && personalRate !== null)
-    ? blendValues(profile.progression, personalRate, sessions.length)
-    : profile.progression;
+  // Pick rate: manual override > personal (if calibrated) > static default.
+  const ovRate = Number(overrides.progressionRate);
+  const baseRate = (Number.isFinite(ovRate) && ovRate >= 0)
+    ? ovRate
+    : (sessions.length >= MIN_SESSIONS_LEARNING && personalRate !== null)
+      ? blendValues(profile.progression, personalRate, sessions.length)
+      : profile.progression;
 
   const buffer = rir - targetRIR;
   let factor;

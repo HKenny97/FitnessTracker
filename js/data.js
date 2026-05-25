@@ -297,6 +297,44 @@ export async function getVolumeSuggestions(mesoId, week) {
   return items;
 }
 
+// ── Per-exercise manual overrides for the adaptive engine ──
+// Map keyed by lowercased exercise name. Empty cells mean "use the auto value".
+
+export async function getExerciseOverrides() {
+  const rows = await cached("exerciseOverrides", () => sheets.readAll("exerciseOverrides"));
+  const map = {};
+  for (const r of rows) {
+    if (!r.exercise) continue;
+    map[r.exercise.toLowerCase()] = {
+      exercise: r.exercise,
+      progressionRate: r.progressionRate === "" || r.progressionRate == null ? null : +r.progressionRate,
+      repMin: r.repMin === "" || r.repMin == null ? null : +r.repMin,
+      repMax: r.repMax === "" || r.repMax == null ? null : +r.repMax,
+      targetRIR: r.targetRIR === "" || r.targetRIR == null ? null : +r.targetRIR,
+    };
+  }
+  return map;
+}
+
+export async function getExerciseOverride(exercise) {
+  const map = await getExerciseOverrides();
+  return map[(exercise || "").toLowerCase()] || null;
+}
+
+// Save (upsert) overrides for one exercise. Pass null/"" for a field to clear it.
+export async function saveExerciseOverride(exercise, fields = {}) {
+  const cell = (v) => (v == null || v === "" ? "" : v);
+  await sheets.upsertRow("exerciseOverrides", "exercise", {
+    exercise,
+    progressionRate: cell(fields.progressionRate),
+    repMin: cell(fields.repMin),
+    repMax: cell(fields.repMax),
+    targetRIR: cell(fields.targetRIR),
+    updatedAt: new Date().toISOString(),
+  });
+  invalidate("exerciseOverrides");
+}
+
 // Week plan with accepted adjustments folded into targetSets (clamped >= 0).
 // Single seam used by the workout view, dashboard, and meso preview.
 export async function getEffectiveWeekPlan(mesoId) {
@@ -674,7 +712,7 @@ export async function getRecentPRs(limit = 5) {
 // ── Data export ──
 
 export async function exportAllData() {
-  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "landmarks", "sessionFeedback", "weekPlanAdjustments"];
+  const keys = ["mesocycles", "templateDays", "templateExercises", "weekPlan", "sets", "sessions", "customExercises", "cardio", "landmarks", "sessionFeedback", "weekPlanAdjustments", "exerciseOverrides"];
   const result = {};
   await Promise.all(keys.map(async (k) => { result[k] = await sheets.readAll(k); }));
   return result;
