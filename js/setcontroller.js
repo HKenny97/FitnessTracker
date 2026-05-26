@@ -75,13 +75,21 @@ function ensureBar() {
   const fields = {};
   for (const f of FIELDS) fields[f] = makeField(f);
 
+  // Plate-calculator shortcut, tucked under the Weight value (shown only for
+  // plate-loaded exercises — the active ctx decides via `usesPlates`).
+  const plateBtn = el("button", {
+    type: "button", class: "btn small ghost sc-plate", title: "Plate calculator", "aria-label": "Plate calculator",
+    onmousedown: pd, onclick: () => { const c = liveCtx(); if (c && c.openPlates) c.openPlates(); },
+  }, plateIcon());
+  fields.weight.wrap.append(plateBtn);
+
   const typeBtn = el("button", { type: "button", class: "btn small ghost sc-type", onmousedown: pd, onclick: () => { const c = liveCtx(); if (c) { c.cycleType(); paint(); } } });
   const logBtn = el("button", { type: "button", class: "btn small primary sc-log", onmousedown: pd, onclick: doCommit }, "Log set");
   const addBtn = mkBtn("+ set", "Add a set", () => { const c = liveCtx(); if (c) { c.addSet(); paint(); } }, "btn small ghost");
 
   const panel = el("div", { class: "sc-panel" });
 
-  els = { prevBtn, nextBtn, nameBtn, progressEl, expandBtn, dropdown, fields, typeBtn, logBtn, addBtn, panel };
+  els = { prevBtn, nextBtn, nameBtn, progressEl, expandBtn, dropdown, fields, plateBtn, typeBtn, logBtn, addBtn, panel };
 
   barEl = el("div", { class: "set-controller idle", role: "group", "aria-label": "Set controller" },
     el("div", { class: "sc-row sc-top" }, prevBtn, nameBtn, progressEl, nextBtn, expandBtn),
@@ -97,6 +105,18 @@ function ensureBar() {
 const pd = (e) => e.preventDefault();
 function mkBtn(label, title, onClick, cls = "btn icon") {
   return el("button", { type: "button", class: cls, title, "aria-label": title, onmousedown: pd, onclick: onClick }, label);
+}
+
+// Small weight-plate glyph (disc with a center hole), inherits text colour.
+function plateIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = '<circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/>';
+  return svg;
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
@@ -137,6 +157,7 @@ function paint() {
     els.nameBtn.textContent = ctxList.length ? "Select exercise" : "Add an exercise";
     els.progressEl.textContent = "";
     for (const f of FIELDS) els.fields[f].input.value = "";
+    els.plateBtn.style.display = "none";
     dropdownOpen = false;
     expanded = false; // reset expanded when no context
     paintDropdown();
@@ -151,6 +172,7 @@ function paint() {
 
   for (const f of FIELDS) els.fields[f].input.value = c.field(f);
   els.fields.weight.unit.textContent = unitLabel() + (isPerSide(c.name) ? " /side" : "");
+  els.plateBtn.style.display = c.usesPlates ? "" : "none";
   // RIR only applies inside a mesocycle; hide it entirely in freeform/custom.
   els.fields.rir.wrap.style.display = mode === "custom" ? "none" : "";
 

@@ -800,9 +800,6 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
       quickInput,
       el("button", { class: "btn small", onclick: applyQuick }, "Parse"),
       el("button", { type: "button", class: "btn small ghost", title: "Plan warm-ups + working sets", onclick: openPlanner }, "Plan"),
-      usesPlates(equipment)
-        ? el("button", { type: "button", class: "btn small ghost", title: "Plate calculator", onclick: () => openPlateModal(suggestedDisplay, { equipment, exercise: ex.exercise }) }, "Plates")
-        : null,
     );
     return el("div", {}, meta, lines, errorsContainer, actions);
   }
@@ -951,6 +948,8 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
     },
     addSet: () => { addDraft(); editingSetId = null; editTemp = null; activeDraftIndex = drafts.length - 1; renderSets(); },
     buildPanel: buildExercisePanel,
+    usesPlates: usesPlates(equipment),
+    openPlates: () => openPlateModal(ctx.field("weight") || suggestedDisplay, { equipment, exercise: ex.exercise }),
     onDeactivate: () => { if (editingSetId) { editingSetId = null; editTemp = null; renderSets(); } },
   };
 
@@ -1371,9 +1370,6 @@ async function renderCustomMode(root, onFinish) {
         blockQuick,
         el("button", { class: "btn small", onclick: applyBlockQuick }, "Parse"),
         el("button", { type: "button", class: "btn small ghost", title: "Plan warm-ups + working sets", onclick: openPlanner }, "Plan"),
-        usesPlates(equipment)
-          ? el("button", { type: "button", class: "btn small ghost", title: "Plate calculator", onclick: () => openPlateModal(lastSavedWeightLbs() ? toDisplay(lastSavedWeightLbs()) : "", { equipment, exercise: ex.exercise }) }, "Plates")
-          : null,
       );
       return el("div", {}, meta, lines, blockErrors, actions);
     }
@@ -1504,6 +1500,8 @@ async function renderCustomMode(root, onFinish) {
       },
       addSet: addBlank,
       buildPanel: buildCustomPanel,
+      usesPlates: usesPlates(equipment),
+      openPlates: () => openPlateModal(ctx.field("weight") || (lastSavedWeightLbs() ? toDisplay(lastSavedWeightLbs()) : ""), { equipment, exercise: ex.exercise }),
       onDeactivate: () => { if (editingSetId) { editingSetId = null; editTemp = null; renderSets(); } },
     };
 
