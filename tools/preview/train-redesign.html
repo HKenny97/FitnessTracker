@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<title>Train redesign — prototype</title>
+<link rel="stylesheet" href="../../css/styles.css"/>
+<style>
+  /* Prototype-only chrome. Everything else reuses the real app classes. */
+  body { margin: 0; }
+  .proto-shell { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; }
+  /* Sticky top app-bar with the Start / End control. */
+  .appbar {
+    position: sticky; top: 0; z-index: 60;
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.7rem 0.9rem calc(0.7rem);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .appbar .title { font-weight: 800; font-size: 1.05rem; line-height: 1.1; }
+  .appbar .title small { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
+  .appbar .spacer { flex: 1; }
+  main.feed { padding: 0.8rem 0.8rem 11rem; display: flex; flex-direction: column; gap: 0.7rem; }
+  /* Focus pill */
+  .focus { align-self: flex-start; }
+  .focus-pill {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    border: 1px solid var(--line); background: var(--panel);
+    border-radius: 999px; padding: 0.4rem 0.8rem; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; color: var(--text);
+  }
+  .focus-pill .dot { color: var(--accent); }
+  .focus-open { display: block; width: 100%; }
+  .focus-cov { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.6rem; }
+  .cov-row { display: grid; grid-template-columns: 7rem 1fr auto; gap: 0.5rem; align-items: center; font-size: 0.82rem; }
+  .cov-track { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+  .cov-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.2s; }
+  .cov-fill.low { background: var(--bad); }
+  .cov-fill.mid { background: var(--warn); }
+  /* Warm-up suggestion banner */
+  .warmup { border: 1px dashed var(--accent); }
+  .warmup .row { gap: 0.5rem; margin-top: 0.6rem; }
+  /* Cardio card accent */
+  .exercise-block.cardio { border-left: 3px solid var(--accent); }
+  .kind-pill { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 700; }
+  /* Focus the active card to the TOP, clearing the sticky app-bar. */
+  .exercise-block { scroll-margin-top: 4.5rem; }
+  .exercise-block.active { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .empty-hint { color: var(--muted); text-align: center; padding: 2rem 1rem; }
+  .sc-cardio-actions .sc-log { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="proto-shell" id="shell"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+// ── tiny DOM helper (mirrors js/ui.js el) ──────────────────────────────────
+function h(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "style" && typeof v === "object") Object.assign(n.style, v);
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2).toLowerCase(), v);
+    else n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) { if (c == null || c === false) continue; n.append(c instanceof Node ? c : document.createTextNode(String(c))); }
+  return n;
+}
+const toast = (msg) => { const t = document.getElementById("toast"); t.textContent = msg; t.className = "toast show"; setTimeout(() => (t.className = "toast"), 1400); };
+
+// ── mock domain data ───────────────────────────────────────────────────────
+const CARDIO_TYPES = ["Running","Cycling","Swimming","Rowing","Elliptical","Stair Climber","Walking","HIIT","Jump Rope","Hiking"];
+const PRESETS = { Push: ["Chest","Shoulders (front delts)","Triceps"], Pull: ["Back","Biceps"], Legs: ["Quads","Hamstrings","Glutes"] };
+const REGIONS = {
+  Legs: ["Quads","Hamstrings","Glutes","Calves"],
+  Chest: ["Chest"], Back: ["Back","Traps"],
+  Shoulders: ["Shoulders (side delts)","Shoulders (rear delts)","Shoulders (front delts)"],
+  Arms: ["Biceps","Triceps","Forearms"], Core: ["Abs"],
+};
+const SHORT = (g) => g.replace(/^Shoulders \((.*)\)$/, (_, x) => x.replace(" delts", "")).replace(/\b\w/g, (c) => c.toUpperCase());
+const PLATE_EQUIP = new Set(["barbell","smith machine","hammer strength"]);
+
+// Cardio fields adapt to the type — duration + distance + speed/steps/rounds.
+function cardioFields(type) {
+  const dur = { key: "duration", label: "Min", unit: "min" };
+  const dist = { key: "distance", label: "Dist", unit: "km" };
+  const speed = { key: "speed", label: "Speed", unit: "kph" };
+  const steps = { key: "steps", label: "Steps", unit: "" };
+  const rounds = { key: "rounds", label: "Rounds", unit: "" };
+  if (["Walking","Stair Climber"].includes(type)) return [dur, steps];
+  if (["HIIT","Jump Rope"].includes(type)) return [dur, rounds];
+  if (["Running","Cycling","Rowing","Hiking"].includes(type)) return [dur, dist, speed];
+  return [dur, dist]; // Swimming, Elliptical, default
+}
+
+// Planned mesocycle day (pre-fills the unified list).
+function plannedExercises() {
+  return [
+    { kind:"strength", name:"Barbell Bench Press", muscle:"Chest", equipment:"barbell", target:3, reps:"8–12", rir:2, last:185, draft:{ weight:"185", reps:"8", rir:"2" }, sets:[] },
+    { kind:"strength", name:"Incline DB Press", muscle:"Shoulders (front delts)", equipment:"dumbbell", target:3, reps:"10–15", rir:2, last:70, draft:{ weight:"70", reps:"12", rir:"2" }, sets:[] },
+    { kind:"strength", name:"Cable Triceps Pushdown", muscle:"Triceps", equipment:"cable", target:3, reps:"12–15", rir:1, last:50, draft:{ weight:"50", reps:"14", rir:"1" }, sets:[] },
+  ];
+}
+
+// ── persisted workout-focus selection ──────────────────────────────────────
+const loadFocus = () => { try { return JSON.parse(localStorage.getItem("gama.focusGroups") || "[]"); } catch { return []; } };
+const saveFocus = (arr) => localStorage.setItem("gama.focusGroups", JSON.stringify(arr));
+
+// ── app state ───────────────────────────────────────────────────────────────
+const S = {
+  phase: "idle",            // idle | active | summary
+  items: [],                // workout items (strength + cardio)
+  active: 0,                // focused item index
+  showWarmup: false,
+  focusOpen: false,
+  focus: new Set(loadFocus()),
+  startedAt: null,
+};
+
+const shell = document.getElementById("shell");
+
+// ── render ───────────────────────────────────────────────────────────────────
+function render() {
+  shell.replaceChildren(appbar());
+  if (S.phase === "idle") { shell.append(idleBody()); document.getElementById("sc")?.remove(); return; }
+  if (S.phase === "summary") { shell.append(summaryBody()); document.getElementById("sc")?.remove(); return; }
+  shell.append(activeBody());
+  shell.append(controller());
+  focusActive(false);
+}
+
+function appbar() {
+  const right = S.phase === "active"
+    ? h("button", { class: "btn small danger", onclick: endWorkout }, "End workout")
+    : S.phase === "summary"
+      ? h("button", { class: "btn small", onclick: reset }, "New workout")
+      : h("button", { class: "btn primary", onclick: startWorkout }, "Start workout");
+  return h("div", { class: "appbar" },
+    h("div", { class: "title" }, "Push day", h("small", {}, "Today · Week 3")),
+    h("div", { class: "spacer" }),
+    right,
+  );
+}
+
+function idleBody() {
+  return h("main", { class: "feed" },
+    h("section", { class: "card" },
+      h("h3", {}, "Ready to train"),
+      h("p", { class: "muted small" }, "Tap Start workout. We'll suggest a quick warm-up, then you add exercises and cardio in one scrollable list — logged from the bar at the bottom."),
+    ),
+    h("p", { class: "empty-hint" }, "Press Start workout above ↑"),
+  );
+}
+
+function summaryBody() {
+  const strength = S.items.filter((i) => i.kind === "strength");
+  const sets = strength.reduce((n, i) => n + i.sets.length, 0);
+  const cardio = S.items.filter((i) => i.kind === "cardio" && i.done).length;
+  const mins = S.startedAt ? Math.max(1, Math.round((Date.now() - S.startedAt) / 60000)) : 0;
+  return h("main", { class: "feed" },
+    h("section", { class: "card" },
+      h("h3", {}, "Workout complete 🎉"),
+      h("p", { class: "muted small" }, `${strength.length} exercises · ${sets} sets logged · ${cardio} cardio · ~${mins} min`),
+    ),
+  );
+}
+
+function activeBody() {
+  const feed = h("main", { class: "feed" });
+  feed.append(focusBlock());
+  if (S.showWarmup) feed.append(warmupBanner());
+  S.items.forEach((it, i) => feed.append(it.kind === "cardio" ? cardioCard(it, i) : strengthCard(it, i)));
+  feed.append(h("button", { class: "btn add-exercise-btn", style: { marginTop: "0.3rem" }, onclick: openPicker }, "+ Add exercise"));
+  return feed;
+}
+
+// ── workout focus pill ────────────────────────────────────────────────────────
+function focusBlock() {
+  const wrap = h("div", { class: "focus" + (S.focusOpen ? " focus-open" : "") });
+  if (!S.focusOpen) {
+    const label = S.focus.size ? "Focus: " + [...S.focus].map(SHORT).join(" · ") : "Set focus";
+    wrap.append(h("button", { class: "focus-pill", onclick: () => { S.focusOpen = true; render(); } }, h("span", { class: "dot" }, "◎"), label));
+    return wrap;
+  }
+  const card = h("section", { class: "card" },
+    h("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center" } },
+      h("h3", { style: { margin: 0 } }, "Workout focus"),
+      h("button", { class: "btn small ghost", onclick: () => { S.focusOpen = false; render(); } }, "Done"),
+    ),
+    h("div", { class: "picker-filter-label" }, "Presets"),
+  );
+  const presetRow = h("div", { class: "chip-row" });
+  for (const [name, groups] of Object.entries(PRESETS)) {
+    presetRow.append(h("button", { type: "button", class: "filter-chip", onclick: () => { S.focus = new Set(groups); saveFocus([...S.focus]); render(); } }, name));
+  }
+  card.append(presetRow);
+  for (const [region, members] of Object.entries(REGIONS)) {
+    const row = h("div", { class: "chip-row" });
+    for (const g of members) {
+      row.append(h("button", { type: "button", class: "filter-chip" + (S.focus.has(g) ? " active" : ""), onclick: () => { S.focus.has(g) ? S.focus.delete(g) : S.focus.add(g); saveFocus([...S.focus]); render(); } }, SHORT(g)));
+    }
+    card.append(h("div", { class: "picker-filter-label" }, region), row);
+  }
+  // Coverage: sets done per focus group vs a reference (4 sets) — shows how well hit.
+  if (S.focus.size) {
+    const cov = h("div", { class: "focus-cov" });
+    cov.append(h("div", { class: "picker-filter-label" }, "Coverage this workout"));
+    for (const g of S.focus) {
+      const done = S.items.filter((it) => it.kind === "strength" && it.muscle === g).reduce((n, it) => n + it.sets.length, 0);
+      const ref = 4, pct = Math.min(1, done / ref);
+      const cls = pct >= 0.75 ? "" : pct >= 0.4 ? "mid" : "low";
+      cov.append(h("div", { class: "cov-row" },
+        h("span", {}, SHORT(g)),
+        h("div", { class: "cov-track" }, h("div", { class: "cov-fill " + cls, style: { width: `${pct * 100}%` } })),
+        h("span", { class: "muted small" }, `${done}/${ref}`),
+      ));
+    }
+    card.append(cov);
+  }
+  wrap.append(card);
+  return wrap;
+}
+
+function warmupBanner() {
+  return h("section", { class: "card warmup" },
+    h("strong", {}, "Warm up first"),
+    h("div", { class: "muted small" }, "5–10 min easy cardio to raise your heart rate."),
+    h("div", { class: "row" },
+      h("button", { class: "btn small primary", onclick: () => { addCardio("Walking"); S.showWarmup = false; render(); } }, "Add warm-up"),
+      h("button", { class: "btn small ghost", onclick: () => { S.showWarmup = false; render(); } }, "Skip to strength"),
+    ),
+  );
+}
+
+// ── cards ──────────────────────────────────────────────────────────────────
+function strengthCard(it, i) {
+  const block = h("div", { class: "exercise-block" + (i === S.active ? " active" : ""), onclick: () => focusIndex(i) });
+  it.el = block;
+  const meta = [it.muscle.replace(/^Shoulders \((.*)\)$/, "$1"), `${it.target} sets`, `${it.reps} reps`, `${it.rir} RIR`].join(" · ");
+  block.append(h("div", { class: "exercise-head" }, h("div", {},
+    h("h3", {}, it.name),
+    h("div", { class: "exercise-meta muted small" }, meta),
+  )));
+  const setc = h("div", {});
+  it.sets.forEach((s, n) => setc.append(h("div", { class: "set-row set-status set-done" },
+    h("div", { class: "sc-dot" }, "✓"), h("div", { class: "idx" }, n + 1),
+    h("div", { class: "sc-setval" }, `${s.weight} × ${s.reps} @ ${s.rir}`), h("div", {}))));
+  const d = it.draft;
+  setc.append(h("div", { class: "set-row set-status set-draft active" },
+    h("div", { class: "sc-dot" }, "●"), h("div", { class: "idx" }, it.sets.length + 1),
+    h("div", { class: "sc-setval" }, `${d.weight || "–"} × ${d.reps || "–"} @ ${d.rir || "–"}`), h("div", {})));
+  block.append(setc);
+  return block;
+}
+
+function cardioCard(it, i) {
+  const block = h("div", { class: "exercise-block cardio" + (i === S.active ? " active" : ""), onclick: () => focusIndex(i) });
+  it.el = block;
+  const summary = cardioFields(it.type).map((f) => `${it.values[f.key] || "–"} ${f.unit}`.trim()).join(" · ");
+  block.append(h("div", { class: "exercise-head" }, h("div", {},
+    h("span", { class: "kind-pill" }, "Cardio"),
+    h("h3", {}, it.type),
+    h("div", { class: "exercise-meta muted small" }, it.done ? summary : "Not logged yet"),
+  )));
+  return block;
+}
+
+// ── bottom set controller ────────────────────────────────────────────────────
+function sc() { return document.getElementById("sc") || {}; }
+function controller() {
+  const it = S.items[S.active];
+  const bar = h("div", { class: "set-controller show", id: "sc", role: "group" });
+  const nameLabel = it ? (it.kind === "cardio" ? it.type : it.name) : "—";
+  const progress = it ? (it.kind === "cardio" ? "Cardio" : `Set ${it.sets.length + 1} / ${it.target}`) : "";
+  bar.append(h("div", { class: "sc-row sc-top" },
+    h("button", { class: "btn icon", title: "Previous exercise", onclick: () => step(-1) }, "⟸"),
+    h("button", { class: "btn small ghost sc-name", onclick: () => toast("(dropdown of exercises)") }, nameLabel + " ▾"),
+    h("span", { class: "sc-progress" }, progress),
+    h("button", { class: "btn small ghost", title: "Next exercise", onclick: () => step(1) }, "Next ⟹"),
+    h("button", { class: "btn icon", title: "More info", onclick: () => toast("(detail panel)") }, "⌃"),
+  ));
+  bar.append(fieldsRow(it));
+  if (it && it.kind === "cardio") {
+    bar.append(h("div", { class: "sc-row sc-actions sc-cardio-actions" },
+      h("button", { class: "btn small primary sc-log", onclick: logCardio }, it.done ? "Update" : "Log")));
+  } else {
+    bar.append(h("div", { class: "sc-row sc-actions" },
+      h("button", { class: "btn small ghost sc-type", onclick: () => toast("(set type)") }, "Work"),
+      h("button", { class: "btn small ghost", onclick: () => toast("(adds a set)") }, "+ set"),
+      h("button", { class: "btn small primary sc-log", onclick: logSet }, "Log set")));
+  }
+  return bar;
+}
+
+function fieldsRow(it) {
+  const row = h("div", { class: "sc-fields" });
+  if (!it) return row;
+  if (it.kind === "cardio") {
+    for (const f of cardioFields(it.type)) row.append(field(f.label, it.values[f.key] || "", f.unit, (v) => { it.values[f.key] = v; }));
+  } else {
+    const plate = PLATE_EQUIP.has(it.equipment);
+    row.append(field("Weight", it.draft.weight, "lb" + (false ? " /side" : ""), (v) => { it.draft.weight = v; }, plate));
+    row.append(field("Reps", it.draft.reps, "", (v) => { it.draft.reps = v; }));
+    row.append(field("RIR", it.draft.rir, "", (v) => { it.draft.rir = v; }));
+  }
+  return row;
+}
+
+function field(label, value, unit, onInput, withPlate) {
+  const input = h("input", { type: "number", inputmode: "decimal", class: "sc-value", value, oninput: (e) => { onInput(e.target.value); syncActiveCard(); } });
+  const col = h("div", { class: "sc-field" },
+    h("span", { class: "sc-field-label" }, label),
+    h("div", { class: "sc-stepper" },
+      h("button", { class: "btn icon", onclick: () => { input.value = String((+input.value || 0) - (label === "Weight" ? 5 : 1)); onInput(input.value); syncActiveCard(); } }, "−"),
+      input,
+      h("button", { class: "btn icon", onclick: () => { input.value = String((+input.value || 0) + (label === "Weight" ? 5 : 1)); onInput(input.value); syncActiveCard(); } }, "+"),
+    ),
+    h("span", { class: "sc-unit muted small" }, unit || ""),
+  );
+  if (withPlate) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 20 20"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18");
+    svg.innerHTML = '<circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/>';
+    const btn = h("button", { class: "btn small ghost sc-plate", title: "Plate calculator", onclick: () => toast("(plate calculator — with per-side toggle)") });
+    btn.append(svg); col.append(btn);
+  }
+  return col;
+}
+
+// ── actions ───────────────────────────────────────────────────────────────────
+function startWorkout() { S.phase = "active"; S.startedAt = Date.now(); S.items = plannedExercises(); S.showWarmup = true; S.active = 0; render(); }
+function endWorkout() { S.phase = "summary"; S.focusOpen = false; render(); }
+function reset() { S.phase = "idle"; S.items = []; render(); }
+
+function step(dir) {
+  if (!S.items.length) return;
+  S.active = Math.max(0, Math.min(S.items.length - 1, S.active + dir));
+  render(); focusActive(true);
+}
+function focusIndex(i) { S.active = i; render(); focusActive(true); }
+function focusActive(scroll) {
+  document.querySelectorAll(".exercise-block").forEach((el, i) => el.classList.toggle("active", i === S.active));
+  const it = S.items[S.active];
+  if (scroll && it && it.el) it.el.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+function syncActiveCard() {
+  const it = S.items[S.active]; if (!it || !it.el) return;
+  const fresh = it.kind === "cardio" ? cardioCard(it, S.active) : strengthCard(it, S.active);
+  it.el.replaceWith(fresh);
+}
+function logSet() {
+  const it = S.items[S.active]; if (!it || it.kind !== "strength") return;
+  if (!it.draft.weight || !it.draft.reps) return toast("Need weight and reps");
+  it.sets.push({ ...it.draft });
+  toast("Set logged");
+  render(); focusActive(false);
+}
+function logCardio() {
+  const it = S.items[S.active]; if (!it || it.kind !== "cardio") return;
+  it.done = true; toast(`${it.type} logged`); render(); focusActive(false);
+}
+function addCardio(type) {
+  S.items.push({ kind: "cardio", type, values: {}, done: false });
+  S.active = S.items.length - 1;
+}
+function addStrength(name, muscle, equipment) {
+  S.items.push({ kind: "strength", name, muscle, equipment, target: 3, reps: "8–12", rir: 2, draft: { weight: "", reps: "", rir: "2" }, sets: [] });
+  S.active = S.items.length - 1;
+}
+
+// ── add-exercise picker (with a Cardio category) ─────────────────────────────
+const STRENGTH_LIB = [
+  { name: "Barbell Squat", group: "Quads", equipment: "barbell" },
+  { name: "Romanian Deadlift", group: "Hamstrings", equipment: "barbell" },
+  { name: "Lat Pulldown", group: "Back", equipment: "machine" },
+  { name: "Seated Cable Row", group: "Back", equipment: "cable" },
+  { name: "Dumbbell Curl", group: "Biceps", equipment: "dumbbell" },
+  { name: "Lateral Raise", group: "Shoulders (side delts)", equipment: "dumbbell" },
+  { name: "Leg Press", group: "Quads", equipment: "machine" },
+  { name: "HS Iso-Lateral Row", group: "Back", equipment: "hammer strength" },
+];
+function openPicker() {
+  const overlay = h("div", { class: "picker-overlay" });
+  const close = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  let cat = "strength";
+  const list = h("div", { class: "picker-list" });
+  const draw = () => {
+    list.replaceChildren();
+    if (cat === "cardio") {
+      for (const t of CARDIO_TYPES) {
+        const row = h("div", { class: "picker-row" }, h("span", { class: "picker-row-name" }, t), h("span", { class: "kind-pill" }, "Cardio"));
+        row.onclick = () => { addCardio(t); close(); render(); focusActive(true); };
+        list.append(row);
+      }
+    } else {
+      for (const e of STRENGTH_LIB) {
+        const row = h("div", { class: "picker-row" }, h("span", { class: "picker-row-name" }, e.name), e.equipment ? h("span", { class: "equipment-pill" }, e.equipment) : null);
+        row.onclick = () => { addStrength(e.name, e.group, e.equipment); close(); render(); focusActive(true); };
+        list.append(row);
+      }
+    }
+  };
+  const catRow = h("div", { class: "chip-row" });
+  const mkCat = (key, label) => h("button", { type: "button", class: "filter-chip" + (cat === key ? " active" : ""), onclick: () => { cat = key; [...catRow.children].forEach((c) => c.classList.toggle("active", c.textContent === label)); draw(); } }, label);
+  catRow.append(mkCat("strength", "Strength"), mkCat("cardio", "Cardio"));
+  overlay.append(h("div", { class: "picker-sheet" },
+    h("div", { class: "picker-head" }, h("strong", {}, "Add to workout"), h("button", { class: "btn icon", onclick: close }, "×")),
+    h("div", { class: "picker-filter-label" }, "Category"),
+    catRow,
+    list,
+  ));
+  document.body.append(overlay);
+  draw();
+}
+
+render();
+window.__ready = true;
+</script>
+</body>
+</html>
