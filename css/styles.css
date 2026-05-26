@@ -58,9 +58,9 @@ h3 { font-size: 1.1rem; }
   z-index: 50;
   padding-top: calc(0.6rem + env(safe-area-inset-top, 0));
 }
-.brand { display: flex; align-items: center; gap: 0.5rem; color: var(--text); }
+.brand { display: flex; align-items: center; gap: 0.4rem; color: var(--text); }
 .brand-logo {
-  width: 32px; height: 25px;
+  width: 44px; height: 34px;
 }
 .brand-name { font-weight: 700; letter-spacing: 0.02em; }
 .brand-name .gama { color: var(--gama-green); }
