@@ -8,9 +8,12 @@ function titleCase(s) {
 // Bottom-sheet exercise picker. Shows a search box plus equipment and muscle
 // filter chips that live-filter a tappable list. onPick is called with
 // { name, group, equipment } and the sheet closes.
-export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
+// When `includeCardio` is set, a Strength/Cardio category toggle appears; in the
+// Cardio category the list shows `cardioTypes` and onPick gets
+// { name, group:"", equipment:"", cardio:true, cardioType } instead.
+export function openExercisePicker({ exerciseLib, exclude = [], onPick, includeCardio = false, cardioTypes = [] }) {
   const excludeSet = new Set(exclude);
-  const state = { q: "", equipment: "", region: "", group: "" };
+  const state = { q: "", equipment: "", region: "", group: "", cat: "strength" };
 
   const overlay = el("div", { class: "picker-overlay" });
   const close = () => overlay.remove();
@@ -61,6 +64,21 @@ export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
 
   function renderList() {
     const q = state.q.toLowerCase().trim();
+    if (state.cat === "cardio") {
+      const types = cardioTypes.filter((t) => !q || t.toLowerCase().includes(q));
+      count.textContent = `${types.length} type${types.length === 1 ? "" : "s"}`;
+      list.replaceChildren();
+      for (const t of types) {
+        const row = el("div", { class: "picker-row" },
+          el("span", { class: "picker-row-name" }, t),
+          el("span", { class: "equipment-pill" }, "Cardio"),
+        );
+        row.onclick = () => { onPick({ name: t, group: "", equipment: "", cardio: true, cardioType: t }); close(); };
+        list.append(row);
+      }
+      if (!types.length) list.append(el("p", { class: "muted picker-empty" }, "No cardio types match."));
+      return;
+    }
     const matches = exerciseLib.filter((e) => {
       if (excludeSet.has(e.name)) return false;
       if (state.equipment && e.equipment !== state.equipment) return false;
@@ -91,17 +109,42 @@ export function openExercisePicker({ exerciseLib, exclude = [], onPick }) {
     }
   }
 
-  const sheet = el("div", { class: "picker-sheet" },
-    el("div", { class: "picker-head" },
-      el("strong", {}, "Add exercise"),
-      el("button", { type: "button", class: "btn icon", title: "Close", onclick: close }, "×"),
-    ),
-    search,
+  // Strength-only filters, grouped so they can be hidden in the Cardio category.
+  const strengthFilters = el("div", {},
     el("div", { class: "picker-filter-label" }, "Region"),
     chipRow(Object.keys(MUSCLE_REGIONS), "region", () => { state.group = ""; rebuildMuscleRow(); }),
     muscleRow,
     el("div", { class: "picker-filter-label" }, "Equipment"),
     chipRow(EQUIPMENT_TYPES, "equipment"),
+  );
+
+  // Optional Strength/Cardio category toggle.
+  let categoryRow = null;
+  if (includeCardio) {
+    const row = el("div", { class: "chip-row" });
+    const mk = (key, label) => {
+      const chip = el("button", { type: "button", class: "filter-chip" + (state.cat === key ? " active" : ""), onclick: () => {
+        state.cat = key;
+        for (const c of row.children) c.classList.toggle("active", c.dataset.value === key);
+        strengthFilters.style.display = key === "cardio" ? "none" : "";
+        search.placeholder = key === "cardio" ? "Search cardio…" : "Search exercises…";
+        renderList();
+      } }, label);
+      chip.dataset.value = key;
+      return chip;
+    };
+    row.append(mk("strength", "Strength"), mk("cardio", "Cardio"));
+    categoryRow = el("div", {}, el("div", { class: "picker-filter-label" }, "Category"), row);
+  }
+
+  const sheet = el("div", { class: "picker-sheet" },
+    el("div", { class: "picker-head" },
+      el("strong", {}, "Add to workout"),
+      el("button", { type: "button", class: "btn icon", title: "Close", onclick: close }, "×"),
+    ),
+    search,
+    categoryRow,
+    strengthFilters,
     count,
     list,
   );

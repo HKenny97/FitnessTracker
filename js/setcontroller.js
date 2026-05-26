@@ -8,8 +8,15 @@ import { el } from "./ui.js";
 import { config, isPerSide } from "./config.js";
 import { unitLabel } from "./units.js";
 
-const FIELDS = ["weight", "reps", "rir"];
 const FIELD_LABEL = { weight: "Weight", reps: "Reps", rir: "RIR" };
+// Default (strength) field columns. A ctx may instead supply its own field
+// specs via `ctx.fields()` (used by cardio) — each spec is { key, label, unit?,
+// step? }. Keeping the strength default here preserves existing behaviour.
+const DEFAULT_SPECS = [
+  { key: "weight", label: "Weight" },
+  { key: "reps", label: "Reps" },
+  { key: "rir", label: "RIR" },
+];
 
 // ── Pure value math (exported for tests) ───────────────────────────────────
 export function weightStep(unit) { return unit === "kg" ? 2.5 : 5; }
@@ -19,13 +26,13 @@ export function clampField(field, n) {
 }
 // Next string value for a field given the current value, a seed (suggested),
 // and a direction. Empty + numeric seed snaps to the seed; otherwise steps.
-export function nextValue(field, currentStr, seedStr, dir, unit) {
+export function nextValue(field, currentStr, seedStr, dir, unit, stepOverride) {
   if (currentStr === "" || currentStr == null) {
     const s = parseFloat(seedStr);
     if (Number.isFinite(s)) return String(clampField(field, s));
   }
   const base = parseFloat(currentStr) || 0;
-  const step = field === "weight" ? weightStep(unit) : 1;
+  const step = stepOverride != null ? stepOverride : (field === "weight" ? weightStep(unit) : 1);
   return String(Math.round(clampField(field, base + dir * step) * 100) / 100);
 }
 export function remainingSets(loggedWorking, draftsWorking, target) {
@@ -40,27 +47,53 @@ let ctxList = [];
 let activeCtx = null;
 let expanded = false;
 let dropdownOpen = false;
+let fieldsSig = "";   // signature of the currently-rendered field columns
 
 const liveCtx = () => (activeCtx && document.contains(activeCtx.cardEl) ? activeCtx : null);
 
-// One labelled stepper column (label · [− input +] · unit) for a field.
-function makeField(f) {
+// One labelled stepper column (label · [− input +] · unit) for a field spec
+// { key, label, unit?, step? }. The weight column also carries the plate icon.
+function makeField(spec) {
+  const stepAttr = spec.step != null ? String(spec.step) : (spec.key === "weight" ? "0.5" : "1");
   const input = el("input", {
-    type: "number", inputmode: "decimal", step: f === "weight" ? "0.5" : "1", class: "sc-value",
-    "aria-label": FIELD_LABEL[f],
-    oninput: (e) => { const c = liveCtx(); if (c) { c.setField(f, e.target.value); paintPanel(); } },
+    type: "number", inputmode: "decimal", step: stepAttr, class: "sc-value",
+    "aria-label": spec.label,
+    oninput: (e) => { const c = liveCtx(); if (c) { c.setField(spec.key, e.target.value); paintPanel(); } },
   });
   const unit = el("span", { class: "sc-unit muted small" });
-  const wrap = el("div", { class: "sc-field", "data-field": f },
-    el("span", { class: "sc-field-label" }, FIELD_LABEL[f]),
+  const wrap = el("div", { class: "sc-field", "data-field": spec.key },
+    el("span", { class: "sc-field-label" }, spec.label),
     el("div", { class: "sc-stepper" },
-      mkBtn("−", `Decrease ${FIELD_LABEL[f]}`, () => bump(f, -1)),
+      mkBtn("−", `Decrease ${spec.label}`, () => bump(spec, -1)),
       input,
-      mkBtn("+", `Increase ${FIELD_LABEL[f]}`, () => bump(f, 1)),
+      mkBtn("+", `Increase ${spec.label}`, () => bump(spec, 1)),
     ),
     unit,
   );
-  return { wrap, input, unit };
+  const fo = { wrap, input, unit, spec };
+  if (spec.key === "weight") {
+    // Plate-calculator shortcut under the Weight value (shown for plate-loaded
+    // exercises only — the active ctx decides via `usesPlates`).
+    const plateBtn = el("button", {
+      type: "button", class: "btn small ghost sc-plate", title: "Plate calculator", "aria-label": "Plate calculator",
+      onmousedown: pd, onclick: () => { const c = liveCtx(); if (c && c.openPlates) c.openPlates(); },
+    }, plateIcon());
+    wrap.append(plateBtn);
+    fo.plateBtn = plateBtn;
+  }
+  return fo;
+}
+
+// Build the field columns for a ctx, rebuilding only when the set of fields
+// changes (so typing into a stable strength row is never interrupted).
+function syncFields(c) {
+  const specs = c && typeof c.fields === "function" ? c.fields() : DEFAULT_SPECS;
+  const sig = specs.map((s) => s.key).join("|");
+  if (sig === fieldsSig && Object.keys(els.fields).length) return;
+  fieldsSig = sig;
+  els.fields = {};
+  const cols = specs.map((spec) => { const fo = makeField(spec); els.fields[spec.key] = fo; return fo.wrap; });
+  els.fieldsRow.replaceChildren(...cols);
 }
 
 function ensureBar() {
@@ -72,16 +105,8 @@ function ensureBar() {
   const expandBtn = mkBtn("⌃", "More info", toggleExpand);
   const dropdown = el("div", { class: "sc-dropdown" });
 
-  const fields = {};
-  for (const f of FIELDS) fields[f] = makeField(f);
-
-  // Plate-calculator shortcut, tucked under the Weight value (shown only for
-  // plate-loaded exercises — the active ctx decides via `usesPlates`).
-  const plateBtn = el("button", {
-    type: "button", class: "btn small ghost sc-plate", title: "Plate calculator", "aria-label": "Plate calculator",
-    onmousedown: pd, onclick: () => { const c = liveCtx(); if (c && c.openPlates) c.openPlates(); },
-  }, plateIcon());
-  fields.weight.wrap.append(plateBtn);
+  // Field columns are built lazily per active ctx (see syncFields).
+  const fieldsRow = el("div", { class: "sc-fields" });
 
   const typeBtn = el("button", { type: "button", class: "btn small ghost sc-type", onmousedown: pd, onclick: () => { const c = liveCtx(); if (c) { c.cycleType(); paint(); } } });
   const logBtn = el("button", { type: "button", class: "btn small primary sc-log", onmousedown: pd, onclick: doCommit }, "Log set");
@@ -89,12 +114,12 @@ function ensureBar() {
 
   const panel = el("div", { class: "sc-panel" });
 
-  els = { prevBtn, nextBtn, nameBtn, progressEl, expandBtn, dropdown, fields, plateBtn, typeBtn, logBtn, addBtn, panel };
+  els = { prevBtn, nextBtn, nameBtn, progressEl, expandBtn, dropdown, fieldsRow, fields: {}, typeBtn, logBtn, addBtn, panel };
 
   barEl = el("div", { class: "set-controller idle", role: "group", "aria-label": "Set controller" },
     el("div", { class: "sc-row sc-top" }, prevBtn, nameBtn, progressEl, nextBtn, expandBtn),
     dropdown,
-    el("div", { class: "sc-fields" }, fields.weight.wrap, fields.reps.wrap, fields.rir.wrap),
+    fieldsRow,
     el("div", { class: "sc-row sc-actions" }, typeBtn, addBtn, logBtn),
     panel,
   );
@@ -120,10 +145,10 @@ function plateIcon() {
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
-function bump(field, dir) {
+function bump(spec, dir) {
   const c = liveCtx();
   if (!c) return;
-  c.setField(field, nextValue(field, c.field(field), c.seedFor(field), dir, config.displayUnit));
+  c.setField(spec.key, nextValue(spec.key, c.field(spec.key), c.seedFor(spec.key), dir, config.displayUnit, spec.step));
   paint();
 }
 function step(dir) {
@@ -156,30 +181,38 @@ function paint() {
   if (!c) {
     els.nameBtn.textContent = ctxList.length ? "Select exercise" : "Add an exercise";
     els.progressEl.textContent = "";
-    for (const f of FIELDS) els.fields[f].input.value = "";
-    els.plateBtn.style.display = "none";
+    for (const k in els.fields) els.fields[k].input.value = "";
     dropdownOpen = false;
     expanded = false; // reset expanded when no context
     paintDropdown();
     els.panel.replaceChildren();
     return;
   }
+  const cardio = !!c.cardio;
   els.nameBtn.textContent = c.name + " ▾";
   const p = c.progress();
   els.progressEl.textContent = c.isEditing()
     ? c.activeLabel()
+    : cardio ? (c.activeLabel ? c.activeLabel() : "")
     : (c.hasTarget ? `Set ${p.done + 1} / ${p.target}` : `Set ${p.done + 1}`);
 
-  for (const f of FIELDS) els.fields[f].input.value = c.field(f);
-  els.fields.weight.unit.textContent = unitLabel() + (isPerSide(c.name) ? " /side" : "");
-  els.plateBtn.style.display = c.usesPlates ? "" : "none";
-  // RIR only applies inside a mesocycle; hide it entirely in freeform/custom.
-  els.fields.rir.wrap.style.display = mode === "custom" ? "none" : "";
+  syncFields(c);
+  for (const k in els.fields) {
+    const fo = els.fields[k];
+    fo.input.value = c.field(k);
+    if (k === "weight") fo.unit.textContent = unitLabel() + (isPerSide(c.name) ? " /side" : "");
+    else fo.unit.textContent = fo.spec.unit || "";
+    if (fo.plateBtn) fo.plateBtn.style.display = c.usesPlates ? "" : "none";
+  }
+  // RIR only applies inside a mesocycle; hide it for freeform strength (the
+  // default field set). Cardio supplies its own fields, so this never hits it.
+  if (els.fields.rir && !c.fields) els.fields.rir.wrap.style.display = mode === "custom" ? "none" : "";
 
-  const typeLabel = c.typeLabel();
+  const typeLabel = cardio ? null : c.typeLabel();
   els.typeBtn.style.display = typeLabel ? "" : "none";
   if (typeLabel) els.typeBtn.textContent = typeLabel;
-  els.logBtn.textContent = c.isEditing() ? "Save" : "Log set";
+  els.addBtn.style.display = cardio ? "none" : "";
+  els.logBtn.textContent = c.isEditing() ? (cardio ? "Update" : "Save") : (cardio ? "Log" : "Log set");
   els.logBtn.disabled = !c.canLog();
 
   paintDropdown();
@@ -261,7 +294,7 @@ export function setActiveExercise(ctxOrId) {
   ensureBar();
   if (activeCtx) {
     barEl.classList.add("show");
-    if (document.contains(activeCtx.cardEl)) activeCtx.cardEl.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (document.contains(activeCtx.cardEl)) activeCtx.cardEl.scrollIntoView({ block: "start", behavior: "smooth" });
   }
   paint();
 }

@@ -414,6 +414,9 @@ input[type="number"] {
   border-radius: var(--radius);
   padding: 0.9rem 1rem;
   margin-bottom: 0.8rem;
+  /* When the controller focuses a card it scrolls to the top; clear the sticky
+     top bar so the focused exercise isn't tucked underneath it. */
+  scroll-margin-top: 5rem;
 }
 .exercise-head {
   display: flex;

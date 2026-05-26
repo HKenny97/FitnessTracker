@@ -100,3 +100,13 @@ export function setPerSide(name, on) {
   if (on) map[key] = true; else delete map[key];
   localStorage.setItem("gama.perSide", JSON.stringify(map));
 }
+
+// Persisted "workout focus" muscle groups — remembered across sessions so the
+// focus pill and its coverage tracking pick up where you left off.
+export function getFocusGroups() {
+  try { const a = JSON.parse(localStorage.getItem("gama.focusGroups") || "[]"); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+export function setFocusGroups(groups) {
+  localStorage.setItem("gama.focusGroups", JSON.stringify([...new Set(groups || [])]));
+}
