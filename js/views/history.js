@@ -310,12 +310,15 @@ export async function render(container) {
       const timeStr = meta?.startTime && meta?.endTime
         ? `${meta.startTime} – ${meta.endTime}`
         : meta?.startTime ? `Started ${meta.startTime}` : "";
+      const dateStr = fmtDate(date);
+      const title = meta?.name || dateStr;
+      const sub = [meta?.name ? dateStr : null, timeStr].filter(Boolean).join(" · ");
 
       header.append(
         el("div", { class: "card-row" },
           el("div", {},
-            el("strong", {}, fmtDate(date)),
-            timeStr && el("span", { class: "muted small", style: { marginLeft: "0.75rem" } }, timeStr),
+            el("strong", {}, title),
+            sub && el("span", { class: "muted small", style: { marginLeft: "0.75rem" } }, sub),
           ),
           el("span", { class: "pill-row" },
             dateSets.length && el("span", { class: "pill" }, `${dateSets.length} sets`),

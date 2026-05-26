@@ -328,11 +328,14 @@ export function setActiveExercise(ctxOrId) {
   if (next) manualCollapse = false;
   activeCtx = next || null;
   ensureBar();
-  if (activeCtx) {
-    barEl.classList.add("show");
-    if (document.contains(activeCtx.cardEl)) activeCtx.cardEl.scrollIntoView({ block: "start", behavior: "smooth" });
-  }
+  if (activeCtx) barEl.classList.add("show");
+  // paint() expands the new card and collapses the others; scroll only after
+  // that layout is applied so the chosen exercise lands at the top.
   paint();
+  if (activeCtx && document.contains(activeCtx.cardEl)) {
+    const card = activeCtx.cardEl;
+    requestAnimationFrame(() => card.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
 }
 
 export function refreshSetController() { paint(); }

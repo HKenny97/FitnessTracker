@@ -1,6 +1,6 @@
 // Verifies date normalization (Sheets serial / locale string -> ISO).
 //   node tools/check-dates.mjs   (or: npm run check:dates)
-import { toIsoDate } from "../js/dates.js";
+import { toIsoDate, toClockTime } from "../js/dates.js";
 
 let failures = 0;
 const eq = (got, want, label) => {
@@ -15,5 +15,13 @@ eq(toIsoDate(""), "", "empty");
 eq(toIsoDate(null), "", "null");
 eq(toIsoDate(undefined), "", "undefined");
 
+// Clock-time serials (fraction of a day) -> "HH:MM".
+eq(toClockTime("0.7215277778"), "17:19", "time serial start");
+eq(toClockTime("0.7298611111"), "17:31", "time serial end");
+eq(toClockTime(0.5), "12:00", "noon serial");
+eq(toClockTime("17:19"), "17:19", "HH:MM passthrough");
+eq(toClockTime(""), "", "empty time");
+eq(toClockTime(null), "", "null time");
+
 if (failures) { console.error(`\n${failures} date check failure(s).`); process.exit(1); }
-console.log("OK: date normalization passes.");
+console.log("OK: date + time normalization passes.");

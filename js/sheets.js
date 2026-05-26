@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import { ensureToken } from "./auth.js";
-import { toIsoDate } from "./dates.js";
+import { toIsoDate, toClockTime } from "./dates.js";
 import { QUEUEABLE, enqueue, peekRows, pendingCount, drain } from "./outbox.js";
 
 // UI subscriber for the pending-sync count (set by app.js).
@@ -277,17 +277,24 @@ async function withRetry(fn) {
   }
 }
 
+// Columns holding a clock time (per tab) that Sheets coerces to a time serial
+// on write; converted back to "HH:MM" on read (see toClockTime).
+const TIME_COLUMNS = { sessions: new Set(["startTime", "endTime"]) };
+
 function parseRows(result, key) {
   const rows = result.values || [];
   if (!rows.length) return [];
   const [headers, ...body] = rows;
+  const timeCols = TIME_COLUMNS[key];
   return body
     .filter((row) => row.length > 0)
     .map((row) => {
       const obj = {};
       headers.forEach((h, i) => {
         const v = row[i] ?? "";
-        obj[h] = h === "date" ? toIsoDate(v) : v;
+        obj[h] = h === "date" ? toIsoDate(v)
+          : (timeCols && timeCols.has(h)) ? toClockTime(v)
+          : v;
       });
       return obj;
     });

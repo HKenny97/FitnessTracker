@@ -24,3 +24,17 @@ export function toIsoDate(v) {
 
   return String(v);
 }
+
+// Normalize a stored clock-time value to "HH:MM". Times written with
+// valueInputOption "USER_ENTERED" are coerced by Sheets into a time serial
+// (fraction of a day, e.g. "17:19" -> 0.7215277778), which reads back as that
+// decimal. Already-formatted "HH:MM" strings and empty values pass through.
+export function toClockTime(v) {
+  if (v === "" || v == null) return "";
+  if (typeof v === "string" && /^\d{1,2}:\d{2}/.test(v)) return v;
+  if (typeof v === "number" || (typeof v === "string" && /^\d*\.?\d+$/.test(v))) {
+    const mins = Math.round((Number(v) % 1) * 1440) % 1440;
+    if (Number.isFinite(mins)) return `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
+  }
+  return String(v);
+}
