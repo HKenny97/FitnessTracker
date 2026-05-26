@@ -435,6 +435,17 @@ input[type="number"] {
 }
 .focus-pill .dot { color: var(--accent); }
 .focus-pill > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Start / End workout bar */
+.workout-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.6rem 0.8rem; margin-bottom: 0.8rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.workout-bar .wb-title { font-weight: 800; }
+/* Warm-up suggestion + cardio card accents */
+.card.warmup { border: 1px dashed var(--accent); }
+.exercise-block.cardio { border-left: 3px solid var(--accent); }
+.kind-pill { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 700; }
 .exercise-meta { font-size: 0.8rem; color: var(--muted); display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .exercise-meta .pill {
   background: var(--panel-2);

@@ -1,7 +1,7 @@
 import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
-import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS, restSecondsFor } from "../rp.js";
+import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS, restSecondsFor, CARDIO_TYPES } from "../rp.js";
 import { startRest } from "../timer.js";
 import { setControllerExercises, setActiveExercise, refreshSetController, hideSetController, firstIncomplete } from "../setcontroller.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
@@ -14,6 +14,17 @@ import { toDisplay, fromDisplay, unitLabel, isDumbbell, dbVolumeFactor, usesPlat
 import { platesPerSide, defaultBar, stepperPlates, totalFromCounts } from "../plates.js";
 import { drawDonut } from "../chart.js";
 import { planExercise } from "../warmup.js";
+
+// Cardio controller fields, adapted to the type. All map to columns the cardio
+// record already persists (duration / distance / avgHeartRate); distance is
+// dropped for types where it doesn't apply.
+const NO_DISTANCE_CARDIO = new Set(["Stair Climber", "HIIT", "Jump Rope", "Elliptical"]);
+function cardioFields(type) {
+  const f = [{ key: "duration", label: "Min", unit: "min", step: 1 }];
+  if (!NO_DISTANCE_CARDIO.has(type)) f.push({ key: "distance", label: "Dist", unit: "km", step: 0.1 });
+  f.push({ key: "avgHeartRate", label: "HR", unit: "bpm", step: 1 });
+  return f;
+}
 
 // Per-set intensifier tags. "warmup" is excluded from volume/analytics; every
 // other type counts as one working set.
@@ -992,6 +1003,20 @@ async function renderCustomMode(root, onFinish) {
     });
   }
 
+  // Restore today's cardio so it shows alongside strength in the same list.
+  const todayCardio = (await data.listCardio()).filter((c) => c.date === isoToday());
+  for (const c of todayCardio) {
+    exercises.push({
+      kind: "cardio", id: c.id, cardioType: c.cardioType, saved: true,
+      values: { duration: c.duration || "", distance: c.distance || "", avgHeartRate: c.avgHeartRate || "" },
+    });
+  }
+
+  // Explicit start/end framing. A workout is already "started" if anything was
+  // logged today (resuming); otherwise the user taps Start.
+  let started = exercises.length > 0;
+  let showWarmup = false;
+
   const session = defaultSessionState();
 
   // Restore existing session metadata for today's custom workout.
@@ -1037,7 +1062,7 @@ async function renderCustomMode(root, onFinish) {
     saved: false,
   });
 
-  const findEntry = (name) => exercises.find((e) => normalizeName(e.exercise) === normalizeName(name));
+  const findEntry = (name) => exercises.find((e) => e.kind !== "cardio" && normalizeName(e.exercise) === normalizeName(name));
 
   // Freeform "workout focus": targeted muscle groups + per-session feedback.
   // Seeded from the persisted selection so focus carries across sessions.
@@ -1051,6 +1076,7 @@ async function renderCustomMode(root, onFinish) {
   const trainedCounts = () => {
     const counts = {};
     for (const ex of exercises) {
+      if (ex.kind === "cardio") continue;
       const n = ex.sets.filter((s) => s.saved).length;
       if (n) counts[ex.muscleGroup] = (counts[ex.muscleGroup] || 0) + n;
     }
@@ -1188,17 +1214,71 @@ async function renderCustomMode(root, onFinish) {
     openExercisePicker({ exerciseLib, onPick: ({ name, group }) => commit(name, group) });
   }
 
+  async function finishWorkout() {
+    if (!session.endTime) {
+      session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    await saveSessionMeta();
+    const muscles = Object.keys(trainedCounts());
+    if (muscles.length) {
+      await run(data.logSessionFeedback({
+        mesoId: CUSTOM_MESO_ID, week: 0, dayIndex: 0, date: isoToday(),
+        feedback: muscles.map((m) => ({ muscleGroup: m, ...(feedbackState[m] || { pump: 1, soreness: 1, jointPain: 0, performance: 2 }) })),
+      }), { ok: "Workout saved" });
+    }
+    onFinish();
+  }
+
+  function startWorkout() {
+    started = true;
+    showWarmup = !exercises.some((e) => e.kind === "cardio");
+    rerender();
+  }
+
+  function addCardioItem(type) {
+    exercises.push({ kind: "cardio", cardioType: type, values: {}, saved: false });
+    rerender();
+  }
+
   function rerender() {
     customRoot.replaceChildren();
-    customRoot.append(
-      el("p", { class: "muted" }, "Log sets for any exercise without a mesocycle plan."),
-    );
 
-    customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
+    // Start / End workout bar pinned at the top.
+    const startBar = el("div", { class: "workout-bar" }, el("div", { class: "wb-title" }, "Custom workout"));
+    if (started) {
+      const endBtn = el("button", { class: "btn small danger" }, "End workout");
+      endBtn.onclick = withLoading(endBtn, finishWorkout);
+      startBar.append(endBtn);
+    } else {
+      startBar.append(el("button", { class: "btn primary", onclick: startWorkout }, "Start workout"));
+    }
+    customRoot.append(startBar);
+
+    if (!started) {
+      customRoot.append(el("p", { class: "muted", style: { marginTop: "1rem" } },
+        "Press Start workout to begin — you'll get a warm-up suggestion, then add exercises and cardio."));
+      setControllerExercises([], "custom");
+      prevExCount = 0;
+      return;
+    }
+
     customRoot.append(buildFocusCard());
+    customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
     const suggestions = buildSuggestions();
     if (suggestions) customRoot.append(suggestions);
     customRoot.append(coverageContainer);
+
+    // Warm-up cardio suggestion (until cardio is added or it's skipped).
+    if (showWarmup && !exercises.some((e) => e.kind === "cardio")) {
+      customRoot.append(el("section", { class: "card warmup" },
+        el("strong", {}, "Warm up first"),
+        el("div", { class: "muted small" }, "5–10 min easy cardio to raise your heart rate."),
+        el("div", { class: "row", style: { gap: "0.5rem", marginTop: "0.6rem" } },
+          el("button", { class: "btn small primary", onclick: () => { showWarmup = false; addCardioItem("Walking"); } }, "Add warm-up"),
+          el("button", { class: "btn small ghost", onclick: () => { showWarmup = false; rerender(); } }, "Skip to strength"),
+        ),
+      ));
+    }
 
     const quickEx = el("input", {
       type: "text", autocomplete: "off",
@@ -1209,19 +1289,22 @@ async function renderCustomMode(root, onFinish) {
       if (e.key === "Enter") { e.preventDefault(); quickAddExercise(quickEx.value); }
     });
     const addCard = el("section", { class: "card" },
-      el("h3", {}, "Add exercise"),
+      el("h3", {}, "Add to workout"),
       el("button", {
         class: "btn primary add-exercise-btn",
         onclick: () => openExercisePicker({
           exerciseLib,
-          exclude: exercises.map((e) => e.exercise),
-          onPick: ({ name, group }) => {
-            if (exercises.some((e) => e.exercise === name)) return toast("Already added", "bad");
-            exercises.push({ exercise: name, muscleGroup: group || "", sets: [] });
+          exclude: exercises.filter((e) => e.kind !== "cardio").map((e) => e.exercise),
+          includeCardio: true,
+          cardioTypes: CARDIO_TYPES,
+          onPick: (pick) => {
+            if (pick.cardio) return addCardioItem(pick.cardioType);
+            if (exercises.some((e) => e.kind !== "cardio" && e.exercise === pick.name)) return toast("Already added", "bad");
+            exercises.push({ exercise: pick.name, muscleGroup: pick.group || "", sets: [] });
             rerender();
           },
         }),
-      }, "+ Add exercise"),
+      }, "+ Add exercise / cardio"),
       el("div", { class: "row", style: { gap: "0.4rem", marginTop: "0.5rem" } },
         quickEx,
         el("button", { class: "btn", onclick: () => quickAddExercise(quickEx.value) }, "Parse & add"),
@@ -1241,7 +1324,7 @@ async function renderCustomMode(root, onFinish) {
     customRoot.append(addCard);
 
     if (!exercises.length) {
-      customRoot.append(el("p", { class: "muted" }, "Add exercises above to start logging."));
+      customRoot.append(el("p", { class: "muted" }, "Add exercises or cardio above to start logging."));
       renderCoverage();
       setControllerExercises([], "custom");
       prevExCount = 0;
@@ -1250,7 +1333,7 @@ async function renderCustomMode(root, onFinish) {
 
     const ctxList = [];
     for (const ex of exercises) {
-      const { block, ctx } = buildCustomBlock(ex, refreshLive);
+      const { block, ctx } = ex.kind === "cardio" ? buildCardioBlock(ex) : buildCustomBlock(ex, refreshLive);
       customRoot.append(block);
       ctxList.push(ctx);
     }
@@ -1261,23 +1344,72 @@ async function renderCustomMode(root, onFinish) {
 
     customRoot.append(feedbackContainer);
     refreshLive();
+  }
 
-    const finishBtn = el("button", { class: "btn primary finish-btn" }, "Finish Workout");
-    finishBtn.onclick = withLoading(finishBtn, async () => {
-      if (!session.endTime) {
-        session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-      }
-      await saveSessionMeta();
-      const muscles = Object.keys(trainedCounts());
-      if (muscles.length) {
-        await run(data.logSessionFeedback({
-          mesoId: CUSTOM_MESO_ID, week: 0, dayIndex: 0, date: isoToday(),
-          feedback: muscles.map((m) => ({ muscleGroup: m, ...(feedbackState[m] || { pump: 1, soreness: 1, jointPain: 0, performance: 2 }) })),
-        }), { ok: "Workout saved" });
-      }
-      onFinish();
-    });
-    customRoot.append(finishBtn);
+  // A cardio item rendered as a card + controller context (controller-driven,
+  // type-adaptive fields). Logs/updates via the existing cardio data layer.
+  function buildCardioBlock(ex) {
+    const block = el("div", { class: "exercise-block cardio" });
+    function paintCard() {
+      const fields = cardioFields(ex.cardioType);
+      const has = ex.saved || fields.some((f) => ex.values[f.key]);
+      const summary = has ? fields.map((f) => `${ex.values[f.key] || "–"} ${f.unit}`.trim()).join(" · ") : "Not logged yet";
+      block.replaceChildren(
+        el("div", { class: "exercise-head" },
+          el("div", {},
+            el("span", { class: "kind-pill" }, "Cardio"),
+            el("h3", {}, ex.cardioType),
+            el("div", { class: "exercise-meta muted small" }, summary + (ex.saved ? " · ✓ logged" : "")),
+          ),
+          el("button", { class: "btn small danger ghost", "aria-label": "Remove cardio", onclick: () => removeCardio(ex) }, "Remove"),
+        ),
+      );
+    }
+    paintCard();
+    const ctx = {
+      id: "cardio|" + ex.cardioType + "|" + (ex.id || exercises.indexOf(ex)),
+      name: ex.cardioType,
+      cardEl: block,
+      cardio: true,
+      hasTarget: false,
+      progress: () => ({ done: ex.saved ? 1 : 0, target: 0, remaining: 0 }),
+      isEditing: () => !!ex.saved,
+      activeLabel: () => (ex.saved ? "Logged" : "Cardio"),
+      fields: () => cardioFields(ex.cardioType),
+      field: (k) => String(ex.values[k] ?? ""),
+      setField: (k, v) => { ex.values[k] = v; paintCard(); },
+      seedFor: () => "",
+      typeLabel: () => null,
+      cycleType: () => {},
+      canLog: () => !!ex.values.duration,
+      commit: async () => {
+        if (!ex.values.duration) return toast("Duration required", "bad");
+        const payload = { date: isoToday(), cardioType: ex.cardioType, duration: ex.values.duration, distance: ex.values.distance || "", avgHeartRate: ex.values.avgHeartRate || "" };
+        if (ex.saved && ex.id) {
+          await run(data.updateCardioEntry(ex.id, payload), { ok: "Cardio updated" });
+        } else {
+          const saved = await run(data.logCardio(payload), { ok: "Cardio logged" });
+          ex.id = saved.id; ex.saved = true;
+        }
+        paintCard();
+        refreshSetController();
+      },
+      addSet: () => {},
+      buildPanel: () => el("div", { class: "muted small" }, "Log duration" + (NO_DISTANCE_CARDIO.has(ex.cardioType) ? "" : " and distance") + "; heart rate optional."),
+      usesPlates: false,
+      onDeactivate: () => {},
+    };
+    return { block, ctx };
+  }
+
+  function removeCardio(ex) {
+    const go = async () => {
+      if (ex.saved && ex.id) await run(data.deleteCardioEntry(ex.id), { ok: "Cardio removed" });
+      const i = exercises.indexOf(ex);
+      if (i >= 0) exercises.splice(i, 1);
+      rerender();
+    };
+    if (ex.saved) confirmModal("Remove this cardio entry?", go); else go();
   }
 
   function buildCustomBlock(ex, refreshLive) {
