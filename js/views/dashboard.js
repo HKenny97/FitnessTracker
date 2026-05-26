@@ -113,7 +113,6 @@ export async function render(container, { signedIn }) {
   container.append(
     el("div", { class: "row", style: { gap: "0.6rem", marginBottom: "1.2rem", flexWrap: "wrap" } },
       el("a", { class: "btn primary", href: "#/workout", style: { flex: "1", minWidth: "160px" } }, "▶ Start Workout"),
-      el("a", { class: "btn", href: "#/cardio" }, "＋ Log Cardio"),
     ),
   );
 
