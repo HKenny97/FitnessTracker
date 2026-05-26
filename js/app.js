@@ -110,6 +110,7 @@ route("/meso/:id", wrap(async (root, p) => meso.renderDetail(root, p.id)));
 route("/workout", wrap(async (root) => workout.render(root)));
 route("/history", wrap(async (root) => history.render(root)));
 route("/settings", wrap(async (root) => settings.render(root)));
+route("/link/:id", wrap(async (root, p) => settings.renderLink(root, p.id)));
 route("/insights", wrap(async (root) => insights.render(root, {})));
 route("/insights/:exercise", wrap(async (root, p) => insights.render(root, { exercise: p.exercise })));
 

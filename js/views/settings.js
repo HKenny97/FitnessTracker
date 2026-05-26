@@ -4,6 +4,108 @@ import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
 import { seedDemoData, removeDemoData } from "../seed.js";
+import { pickSpreadsheet } from "../picker.js";
+
+// A device-link URL points another device at the same workbook. The /link/:id
+// route (app.js) confirms before switching this device's stored sheet ID.
+function deviceLinkUrl(id) {
+  return `${location.origin}${location.pathname}#/link/${id}`;
+}
+
+async function linkAndReload(id) {
+  sheets.setSpreadsheetId(id);
+  await run(sheets.ensureTabs(id), { ok: "Linked" });
+  setTimeout(() => location.reload(), 400);
+}
+
+// Google Picker accelerator. Best-effort — falls back to a toast pointing at
+// the always-present device-link / paste options if the picker can't run.
+async function findSheetInDrive() {
+  try {
+    const id = await pickSpreadsheet();
+    if (!id) return;
+    await linkAndReload(id);
+  } catch (e) {
+    console.error("Drive picker unavailable:", e);
+    toast("Drive picker isn't available here — use the link or paste an ID instead", "bad");
+  }
+}
+
+function findInDriveButton(label = "Find my sheet in Google Drive") {
+  return el("button", { class: "btn", onclick: findSheetInDrive }, label);
+}
+
+// Modal showing a copyable device-link plus a scannable QR code for it.
+function showLinkModal(sheetId) {
+  const url = deviceLinkUrl(sheetId);
+  const overlay = el("div", { class: "modal-overlay" });
+
+  const qrBox = el("div", { style: { textAlign: "center", margin: "0.75rem 0" } });
+  try {
+    const qr = window.qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+    qrBox.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2 });
+  } catch (e) {
+    console.error("QR render failed:", e);
+    qrBox.append(el("p", { class: "muted small" }, "(QR code unavailable — use the link below)"));
+  }
+
+  const urlField = el("input", {
+    type: "text", readonly: "readonly", value: url,
+    onclick: (e) => e.target.select(),
+    style: { width: "100%" },
+  });
+  const copyBtn = el("button", { class: "btn small primary" }, "Copy link");
+  copyBtn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Link copied", "ok");
+    } catch {
+      urlField.select();
+      toast("Press Ctrl/Cmd-C to copy", "warn");
+    }
+  };
+  const doneBtn = el("button", { class: "btn small" }, "Done");
+  doneBtn.onclick = () => overlay.remove();
+
+  overlay.append(
+    el("div", { class: "modal-card" },
+      el("h2", {}, "Link another device"),
+      el("p", { class: "muted small" },
+        "On your other device, open this link (or scan the code) to point it at this same sheet."),
+      qrBox,
+      urlField,
+      el("div", { class: "btn-row" }, doneBtn, copyBtn),
+    ),
+  );
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.append(overlay);
+}
+
+// Confirmation view for the #/link/:id deep link.
+export async function renderLink(container, id) {
+  container.append(el("h1", {}, "Link this device"));
+  const current = sheets.getSpreadsheetId();
+  const card = el("section", { class: "card" },
+    el("p", {}, "Point this browser at the shared data sheet:"),
+    el("p", {}, el("code", {}, id)),
+    current && current !== id
+      ? el("p", { class: "muted small" },
+          "This replaces the sheet this device currently uses. Your other sheet stays in Google Drive.")
+      : null,
+  );
+  const linkBtn = el("button", { class: "btn primary" }, "Link this device");
+  linkBtn.onclick = () => {
+    sheets.setSpreadsheetId(id);
+    location.hash = "#/settings";
+    location.reload();
+  };
+  const cancelBtn = el("button", { class: "btn ghost" }, "Cancel");
+  cancelBtn.onclick = () => { location.hash = "#/"; };
+  card.append(el("div", { class: "row" }, linkBtn, cancelBtn));
+  container.append(card);
+}
 
 export async function render(container) {
   container.append(el("h1", {}, "Settings"));
@@ -102,7 +204,16 @@ export async function render(container) {
                 target: "_blank", rel: "noopener",
               }, "Open in Google Sheets"),
             ),
+            el("p", { class: "muted small", style: { marginTop: "0.75rem" } },
+              "Using this app on another device? Link it to this sheet so both stay in sync."),
             el("div", { class: "row" },
+              el("button", {
+                class: "btn primary",
+                onclick: () => showLinkModal(sheetId),
+              }, "Link another device"),
+              findInDriveButton("Switch to a different sheet"),
+            ),
+            el("div", { class: "row", style: { marginTop: "0.75rem" } },
               el("button", {
                 class: "btn",
                 onclick: async () => {
@@ -125,7 +236,7 @@ export async function render(container) {
           )
         : el("div", {},
             el("p", { class: "muted" },
-              "No sheet linked. Create a fresh workbook, or paste the ID of an existing one."),
+              "No sheet linked. Find your existing sheet in Drive, create a fresh workbook, or paste the ID of an existing one."),
             el("div", { class: "row" },
               el("button", {
                 class: "btn primary",
@@ -136,6 +247,7 @@ export async function render(container) {
                   return id;
                 },
               }, "Create new workbook"),
+              findInDriveButton(),
             ),
             el("div", { class: "field", style: { marginTop: "0.75rem" } },
               el("label", {}, "…or paste an existing spreadsheet ID"),
