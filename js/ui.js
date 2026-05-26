@@ -99,6 +99,7 @@ export function confirmModal(message, onConfirm, { confirmLabel = "Delete", dang
 
 export function defaultSessionState() {
   return {
+    name: "",
     startTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
     endTime: "",
     location: localStorage.getItem("gama.lastLocation") || localStorage.getItem("rp.lastLocation") || "",
@@ -108,6 +109,25 @@ export function defaultSessionState() {
   };
 }
 
+// Editable workout-name header shown at the top of the Train view. Free text
+// bound to session.name; the ✨ button defers to `onSuggest` for proposals.
+export function buildWorkoutNameField(session, { onSuggest } = {}) {
+  const input = el("input", {
+    type: "text", class: "workout-name-input", autocomplete: "off",
+    value: session.name || "", placeholder: "Name this workout",
+    "aria-label": "Workout name",
+    oninput: (e) => (session.name = e.target.value),
+  });
+  const row = el("div", { class: "workout-name-row" }, input);
+  if (onSuggest) {
+    row.append(el("button", {
+      type: "button", class: "btn small ghost workout-name-suggest", title: "Suggest a name", "aria-label": "Suggest a name",
+      onclick: () => onSuggest(input),
+    }, "✨"));
+  }
+  return row;
+}
+
 export function stat(value, label) {
   return el("div", { class: "summary-stat" },
     el("div", { class: "summary-stat-value" }, value),
@@ -115,7 +135,16 @@ export function stat(value, label) {
   );
 }
 
-export function buildSessionMetaForm(session, onSave) {
+export function buildSessionMetaForm(session, onSave, { locations = [] } = {}) {
+  const locListId = "loc-suggestions";
+  const locInput = el("input", {
+    type: "text", value: session.location, placeholder: "e.g. Home gym",
+    list: locations.length ? locListId : null,
+    oninput: (e) => (session.location = e.target.value),
+  });
+  const locDatalist = locations.length
+    ? el("datalist", { id: locListId }, ...locations.map((l) => el("option", { value: l })))
+    : null;
   const card = el("section", { class: "card session-meta" },
     el("h3", {}, "Session info"),
     el("div", { class: "field-row four" },
@@ -129,7 +158,8 @@ export function buildSessionMetaForm(session, onSave) {
       ),
       el("div", { class: "field" },
         el("label", {}, "Location"),
-        el("input", { type: "text", value: session.location, placeholder: "e.g. Home gym", oninput: (e) => (session.location = e.target.value) }),
+        locInput,
+        locDatalist,
       ),
       el("div", { class: "field" },
         el("label", {}, "Total RPE"),

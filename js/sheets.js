@@ -110,6 +110,7 @@ const TABS = {
       "totalRPE",
       "leafStatus",
       "notes",
+      "name",
     ],
   },
   customExercises: {

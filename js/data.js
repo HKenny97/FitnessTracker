@@ -440,6 +440,18 @@ export async function listSessions() {
   return cached("sessions", () => sheets.readAll("sessions"));
 }
 
+// Unique non-empty workout locations from past sessions, most-recent first.
+export async function getPastLocations() {
+  const all = await listSessions();
+  const seen = new Set();
+  const out = [];
+  for (const s of [...all].sort((a, b) => (b.date || "").localeCompare(a.date || ""))) {
+    const loc = (s.location || "").trim();
+    if (loc && !seen.has(loc)) { seen.add(loc); out.push(loc); }
+  }
+  return out;
+}
+
 export async function getSession(mesoId, week, dayIndex, date) {
   const all = await listSessions();
   return all.find(

@@ -423,8 +423,20 @@ input[type="number"] {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.5rem;
+  cursor: pointer;
 }
 .exercise-head h3 { margin: 0; }
+/* Pilled exercises: collapsed cards show only the summary line; the active
+   card (set controller focused on it) expands to reveal the set detail. */
+.exercise-pill-summary { margin-top: 0.15rem; }
+.exercise-detail { display: none; }
+.exercise-block.exercise-active .exercise-detail { display: block; }
+.exercise-block.exercise-active .exercise-pill-summary { display: none; }
+.exercise-block.exercise-active {
+  border-color: var(--gama-green);
+  box-shadow: 0 0 0 1px var(--gama-green);
+}
+.exercise-block.exercise-active .exercise-head { margin-bottom: 0.6rem; }
 /* Collapsible "workout focus" pill */
 .focus { display: block; margin-bottom: 0.8rem; }
 .focus-pill {
@@ -442,6 +454,23 @@ input[type="number"] {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
 }
 .workout-bar .wb-title { font-weight: 800; }
+/* Editable workout-name header */
+.workout-name-row { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 auto; min-width: 0; margin-bottom: 0.8rem; }
+.workout-bar .workout-name-row { margin-bottom: 0; }
+.workout-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 0.2rem 0;
+}
+.workout-name-input::placeholder { color: var(--muted); font-weight: 700; }
+.workout-name-input:focus { outline: none; border-bottom-color: var(--line); }
+.workout-name-suggest { flex: none; }
 /* Warm-up suggestion + cardio card accents */
 .card.warmup { border: 1px dashed var(--accent); }
 .exercise-block.cardio { border-left: 3px solid var(--accent); }

@@ -48,6 +48,8 @@ let activeCtx = null;
 let expanded = false;
 let dropdownOpen = false;
 let fieldsSig = "";   // signature of the currently-rendered field columns
+let manualCollapse = false; // user tapped "Done"; stay collapsed across rerenders
+let lastSig = "";     // signature of the registered exercise list
 
 const liveCtx = () => (activeCtx && document.contains(activeCtx.cardEl) ? activeCtx : null);
 
@@ -176,6 +178,10 @@ function toggleDropdown() { dropdownOpen = !dropdownOpen; paintDropdown(); }
 function paint() {
   if (!barEl) return;
   const c = liveCtx();
+  // Expand only the active card; everything else collapses to a pill.
+  for (const x of ctxList) {
+    if (x.cardEl) x.cardEl.classList.toggle("exercise-active", x === activeCtx && document.contains(x.cardEl));
+  }
   barEl.classList.toggle("idle", !c);
   barEl.classList.toggle("expanded", expanded && !!c);
   if (!c) {
@@ -271,16 +277,32 @@ export function setControllerExercises(list, m) {
   ensureBar();
   if (!ctxList.length) {
     activeCtx = null;
+    lastSig = "";
+    manualCollapse = false;
     hideSetController();
     return;
   }
   barEl.classList.add("show");
+  // A changed exercise set (added/removed) clears a manual collapse so a newly
+  // added exercise can auto-focus; an unchanged list keeps the collapsed state.
+  const sig = ctxList.map((c) => c.id).join("|");
+  const sameList = sig === lastSig;
+  lastSig = sig;
+  if (!sameList) manualCollapse = false;
   // Preserve the active exercise across re-registration (ctx objects are
   // rebuilt each render but ids are stable). Only preserve if the old context
   // element is still in the document.
   const keep = activeCtx && document.contains(activeCtx.cardEl) && ctxList.find((c) => c.id === activeCtx.id);
   if (keep) { activeCtx = keep; paint(); }
+  else if (manualCollapse && sameList) { activeCtx = null; paint(); }
   else setActiveExercise(firstIncomplete() || ctxList[0]);
+}
+
+// Collapse the active exercise back to a pill (the controller goes idle) and
+// remember the choice so a rerender doesn't re-expand it.
+export function collapseActive() {
+  manualCollapse = true;
+  setActiveExercise(null);
 }
 
 export function firstIncomplete() {
@@ -290,6 +312,8 @@ export function firstIncomplete() {
 export function setActiveExercise(ctxOrId) {
   const next = typeof ctxOrId === "string" ? ctxList.find((c) => c.id === ctxOrId) : ctxOrId;
   if (activeCtx && activeCtx !== next && activeCtx.onDeactivate) activeCtx.onDeactivate();
+  // Explicitly activating an exercise clears any prior manual collapse.
+  if (next) manualCollapse = false;
   activeCtx = next || null;
   ensureBar();
   if (activeCtx) {

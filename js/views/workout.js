@@ -1,9 +1,10 @@
-import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, confirmModal, stat, normalizeName, formatMuscle } from "../ui.js";
+import { el, isoToday, run, toast, withLoading, defaultSessionState, buildSessionMetaForm, buildWorkoutNameField, confirmModal, stat, normalizeName, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { distributeSets, suggestSetAdjustment, WORKOUT_PRESETS, MUSCLE_REFERENCE, MUSCLE_REGIONS, restSecondsFor, CARDIO_TYPES } from "../rp.js";
 import { startRest } from "../timer.js";
-import { setControllerExercises, setActiveExercise, refreshSetController, hideSetController, firstIncomplete } from "../setcontroller.js";
+import { setControllerExercises, setActiveExercise, refreshSetController, hideSetController, firstIncomplete, collapseActive } from "../setcontroller.js";
+import { suggestWorkoutNames, detectWorkoutType } from "../workout-name.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
 import { openExercisePicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
@@ -330,6 +331,57 @@ function buildUnparsedPanel(errors, addSets, afterApply) {
   return panel;
 }
 
+// Bottom-sheet of varied name suggestions (reuses the exercise-picker styles).
+// Tapping a suggestion or saving free text sets `session.name` (and syncs the
+// optional `nameInput`). Resolves when the user picks, saves, or skips.
+function openNameSuggestions({ session, context, nameInput }) {
+  return new Promise((resolve) => {
+    const overlay = el("div", { class: "picker-overlay" });
+    const finish = (name) => {
+      if (name != null) {
+        session.name = name;
+        if (nameInput) nameInput.value = name;
+      }
+      overlay.remove();
+      resolve(name);
+    };
+    overlay.onclick = (e) => { if (e.target === overlay) finish(null); };
+
+    const suggestions = suggestWorkoutNames(context);
+    const chips = el("div", { class: "chip-row" });
+    if (suggestions.length) {
+      for (const s of suggestions) {
+        chips.append(el("button", { type: "button", class: "filter-chip", onclick: () => finish(s) }, s));
+      }
+    } else {
+      chips.append(el("div", { class: "muted small" }, "Log a few sets to get name ideas."));
+    }
+
+    const text = el("input", {
+      type: "text", class: "workout-name-input", autocomplete: "off",
+      value: session.name || "", placeholder: "Name this workout",
+    });
+    text.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); finish(text.value.trim()); } });
+
+    const sheet = el("div", { class: "picker-sheet" },
+      el("div", { class: "picker-head" },
+        el("strong", {}, "Name this workout"),
+        el("button", { type: "button", class: "btn icon", title: "Close", onclick: () => finish(null) }, "×"),
+      ),
+      el("div", { class: "picker-filter-label" }, "Suggestions"),
+      chips,
+      el("div", { class: "picker-filter-label" }, "Or type your own"),
+      el("div", { class: "row", style: { gap: "0.4rem" } },
+        text,
+        el("button", { type: "button", class: "btn small primary", onclick: () => finish(text.value.trim()) }, "Save"),
+      ),
+      el("button", { type: "button", class: "btn small ghost", style: { marginTop: "0.5rem" }, onclick: () => finish(null) }, "Leave unnamed"),
+    );
+    overlay.append(sheet);
+    document.body.append(overlay);
+  });
+}
+
 export async function render(container) {
   const active = await data.getActiveMesocycle();
   let mode = active ? "meso" : "custom";
@@ -404,10 +456,12 @@ async function renderMesoMode(root, active, onFinish) {
   let chosenDay = template[0]?.index ?? 0;
 
   const session = defaultSessionState();
+  const pastLocations = await data.getPastLocations();
 
   async function loadExistingSession() {
     const existing = await data.getSession(active.id, chosenWeek, chosenDay, isoToday());
     if (existing) {
+      session.name = existing.name || "";
       session.startTime = existing.startTime || session.startTime;
       session.endTime = existing.endTime || "";
       session.location = existing.location || session.location;
@@ -454,8 +508,19 @@ async function renderMesoMode(root, active, onFinish) {
       }
     }
 
+    const nameSuggest = (nameInput) => {
+      const d = template.find((x) => x.index === chosenDay);
+      const groups = d ? [...new Set(d.exercises.map((e) => e.muscleGroup).filter(Boolean))] : [];
+      return openNameSuggestions({
+        session,
+        context: { startTime: session.startTime, location: session.location, type: d?.name, groups },
+        nameInput,
+      });
+    };
+
     mesoRoot.replaceChildren();
     mesoRoot.append(
+      buildWorkoutNameField(session, { onSuggest: nameSuggest }),
       el("div", { class: "muted", style: { marginBottom: "0.75rem" } }, active.name),
       el("section", { class: "card" },
         el("div", { class: "field-row" },
@@ -488,7 +553,7 @@ async function renderMesoMode(root, active, onFinish) {
     const suggestionPanel = await buildSuggestionPanel();
     if (suggestionPanel) mesoRoot.append(suggestionPanel);
 
-    mesoRoot.append(buildSessionMetaForm(session, saveSessionMeta));
+    mesoRoot.append(buildSessionMetaForm(session, saveSessionMeta, { locations: pastLocations }));
 
     const day = template.find((d) => d.index === chosenDay);
     if (!day) return;
@@ -504,6 +569,12 @@ async function renderMesoMode(root, active, onFinish) {
     finishBtn.onclick = withLoading(finishBtn, async () => {
       if (!session.endTime) {
         session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+      }
+      if (!session.name) {
+        await openNameSuggestions({
+          session,
+          context: { startTime: session.startTime, location: session.location, type: day.name, groups: dayMuscles },
+        });
       }
       await saveSessionMeta();
       if (dayMuscles.length) {
@@ -709,16 +780,35 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
   metaBits.push(`${analysis.repRange.label} reps`, `${targetRIR} RIR`, `${analysis.rest.label} rest`);
   if (perDB) metaBits.push("per dumbbell");
   if (isPerSide(ex.exercise)) metaBits.push("per side");
+  const pillSummary = el("div", { class: "exercise-pill-summary muted small" });
   const head = el("div", {},
     el("h3", {}, ex.exercise),
+    pillSummary,
+  );
+  block.append(el("div", { class: "exercise-head", onclick: () => setActiveExercise(ctx) }, head));
+
+  // Detail (set rows + a Done button) is revealed only when this card is the
+  // active exercise; collapsed cards show just the pill summary above.
+  const detail = el("div", { class: "exercise-detail" },
     el("div", { class: "exercise-meta muted small" }, metaBits.join(" · ")),
   );
   if (prev) {
-    head.append(el("div", { class: "muted small" },
+    detail.append(el("div", { class: "muted small" },
       `Last ${toDisplay(prev.weight)}×${prev.reps} @ ${prev.rir}`
       + (suggested ? ` · suggested ${toDisplay(suggested)} ${unitLabel()}` : "")));
   }
-  block.append(el("div", { class: "exercise-head" }, head));
+  block.append(detail);
+
+  // Collapsed pill face: muscle group · top set · set count.
+  function renderSummary() {
+    const n = logged.length;
+    if (n) {
+      const top = logged.reduce((b, s) => (+s.weight > +b.weight ? s : b), logged[0]);
+      pillSummary.textContent = `${formatMuscle(ex.muscleGroup)} · top ${toDisplay(top.weight)}×${top.reps} · ${n} set${n === 1 ? "" : "s"}`;
+    } else {
+      pillSummary.textContent = `${formatMuscle(ex.muscleGroup)}${setTarget ? ` · 0/${setTarget} sets` : " · no sets yet"}`;
+    }
+  }
 
   const setsContainer = el("div", {});
   const drafts = [];
@@ -777,7 +867,9 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
       },
     });
   }
-  block.append(setsContainer);
+  detail.append(setsContainer);
+  detail.append(el("div", { class: "row", style: { marginTop: "0.5rem", justifyContent: "flex-end" } },
+    el("button", { type: "button", class: "btn small ghost ex-done", onclick: collapseActive }, "Done")));
 
   // The exercise metadata + quick-add/Plan/Plates, relocated into the
   // controller's expandable panel. Reuses the persistent quickInput +
@@ -845,6 +937,7 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
   }
 
   function renderSets() {
+    renderSummary();
     setsContainer.replaceChildren();
     logged.forEach((s, i) => {
       setsContainer.append(
@@ -1018,10 +1111,12 @@ async function renderCustomMode(root, onFinish) {
   let showWarmup = false;
 
   const session = defaultSessionState();
+  const pastLocations = await data.getPastLocations();
 
   // Restore existing session metadata for today's custom workout.
   const existingSession = await data.getSession(CUSTOM_MESO_ID, 0, 0, isoToday());
   if (existingSession) {
+    session.name = existingSession.name || "";
     session.startTime = existingSession.startTime || session.startTime;
     session.endTime = existingSession.endTime || "";
     session.location = existingSession.location || session.location;
@@ -1214,9 +1309,17 @@ async function renderCustomMode(root, onFinish) {
     openExercisePicker({ exerciseLib, onPick: ({ name, group }) => commit(name, group) });
   }
 
+  const nameContext = () => {
+    const groups = Object.keys(trainedCounts());
+    return { startTime: session.startTime, location: session.location, type: detectWorkoutType(groups), groups };
+  };
+
   async function finishWorkout() {
     if (!session.endTime) {
       session.endTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    if (!session.name) {
+      await openNameSuggestions({ session, context: nameContext() });
     }
     await saveSessionMeta();
     const muscles = Object.keys(trainedCounts());
@@ -1243,8 +1346,13 @@ async function renderCustomMode(root, onFinish) {
   function rerender() {
     customRoot.replaceChildren();
 
-    // Start / End workout bar pinned at the top.
-    const startBar = el("div", { class: "workout-bar" }, el("div", { class: "wb-title" }, "Custom workout"));
+    // Start / End workout bar pinned at the top. The static title is replaced
+    // by the editable workout-name field.
+    const startBar = el("div", { class: "workout-bar" },
+      buildWorkoutNameField(session, {
+        onSuggest: (input) => openNameSuggestions({ session, context: nameContext(), nameInput: input }),
+      }),
+    );
     if (started) {
       const endBtn = el("button", { class: "btn small danger" }, "End workout");
       endBtn.onclick = withLoading(endBtn, finishWorkout);
@@ -1263,7 +1371,7 @@ async function renderCustomMode(root, onFinish) {
     }
 
     customRoot.append(buildFocusCard());
-    customRoot.append(buildSessionMetaForm(session, saveSessionMeta));
+    customRoot.append(buildSessionMetaForm(session, saveSessionMeta, { locations: pastLocations }));
     const suggestions = buildSuggestions();
     if (suggestions) customRoot.append(suggestions);
     customRoot.append(coverageContainer);
@@ -1355,13 +1463,18 @@ async function renderCustomMode(root, onFinish) {
       const has = ex.saved || fields.some((f) => ex.values[f.key]);
       const summary = has ? fields.map((f) => `${ex.values[f.key] || "–"} ${f.unit}`.trim()).join(" · ") : "Not logged yet";
       block.replaceChildren(
-        el("div", { class: "exercise-head" },
+        el("div", { class: "exercise-head", onclick: () => setActiveExercise(ctx) },
           el("div", {},
             el("span", { class: "kind-pill" }, "Cardio"),
             el("h3", {}, ex.cardioType),
-            el("div", { class: "exercise-meta muted small" }, summary + (ex.saved ? " · ✓ logged" : "")),
+            el("div", { class: "exercise-pill-summary muted small" }, summary + (ex.saved ? " · ✓ logged" : "")),
           ),
-          el("button", { class: "btn small danger ghost", "aria-label": "Remove cardio", onclick: () => removeCardio(ex) }, "Remove"),
+          el("button", { class: "btn small danger ghost", "aria-label": "Remove cardio", onclick: (e) => { e.stopPropagation(); removeCardio(ex); } }, "Remove"),
+        ),
+        el("div", { class: "exercise-detail" },
+          el("div", { class: "muted small" }, "Log duration" + (NO_DISTANCE_CARDIO.has(ex.cardioType) ? "" : " and distance") + "; heart rate optional."),
+          el("div", { class: "row", style: { marginTop: "0.5rem", justifyContent: "flex-end" } },
+            el("button", { type: "button", class: "btn small ghost ex-done", onclick: collapseActive }, "Done")),
         ),
       );
     }
@@ -1431,17 +1544,36 @@ async function renderCustomMode(root, onFinish) {
     if (perDB) metaBits.push("per dumbbell");
     if (isPerSide(ex.exercise)) metaBits.push("per side");
     if (estMax > 0) metaBits.push(`est. 1RM ~${toDisplay(Math.round(estMax * 10) / 10)} ${unitLabel()}`);
+    const pillSummary = el("div", { class: "exercise-pill-summary muted small" });
     block.append(
-      el("div", { class: "exercise-head" },
+      el("div", { class: "exercise-head", onclick: () => setActiveExercise(ctx) },
         el("div", {},
           el("h3", {}, ex.exercise),
-          el("div", { class: "exercise-meta muted small" }, metaBits.join(" · ")),
+          pillSummary,
         ),
-        el("button", { class: "btn small danger ghost", onclick: () => { exercises.splice(exercises.indexOf(ex), 1); rerender(); } }, "Remove"),
+        el("button", { class: "btn small danger ghost", onclick: (e) => { e.stopPropagation(); exercises.splice(exercises.indexOf(ex), 1); rerender(); } }, "Remove"),
       ),
     );
+
+    // Collapsed pill face: muscle group · top set · set count.
+    function renderSummary() {
+      const saved = ex.sets.filter((s) => s.saved);
+      if (saved.length) {
+        const top = saved.reduce((b, s) => (+s.weight > +b.weight ? s : b), saved[0]);
+        pillSummary.textContent = `${formatMuscle(ex.muscleGroup)} · top ${toDisplay(top.weight)}×${top.reps} · ${saved.length} set${saved.length === 1 ? "" : "s"}`;
+      } else {
+        pillSummary.textContent = `${formatMuscle(ex.muscleGroup)} · no sets yet`;
+      }
+    }
+
+    const detail = el("div", { class: "exercise-detail" },
+      el("div", { class: "exercise-meta muted small" }, metaBits.join(" · ")),
+    );
     const setsContainer = el("div", {});
-    block.append(setsContainer);
+    detail.append(setsContainer);
+    detail.append(el("div", { class: "row", style: { marginTop: "0.5rem", justifyContent: "flex-end" } },
+      el("button", { type: "button", class: "btn small ghost ex-done", onclick: collapseActive }, "Done")));
+    block.append(detail);
 
     // Quick add for an exercise already in the list: set-only shorthand fills
     // unsaved rows for review (any leading name in the text is ignored here).
@@ -1584,6 +1716,7 @@ async function renderCustomMode(root, onFinish) {
     }
 
     function renderSets() {
+      renderSummary();
       setsContainer.replaceChildren();
       if (activeIndex < 0 || activeIndex >= ex.sets.length || ex.sets[activeIndex].saved) activeIndex = firstUnsaved();
       ex.sets.forEach((s, i) => {
@@ -1777,7 +1910,11 @@ export async function renderSummary(container, mesoId, date, onBack) {
   // ── Render ──
 
   const summary = el("section", { class: "card workout-summary" });
-  summary.append(el("h2", {}, "Workout Complete"));
+  if (session?.name) {
+    summary.append(el("h2", {}, session.name), el("p", { class: "muted small" }, "Workout Complete"));
+  } else {
+    summary.append(el("h2", {}, "Workout Complete"));
+  }
 
   // Overall performance verdict vs. your normal.
   if (verdict) {
