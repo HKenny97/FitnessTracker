@@ -342,6 +342,22 @@ export async function render(container) {
     ),
   );
 
+  // Training profile — questionnaire that auto-personalizes volume landmarks.
+  if (sheetId) {
+    const prof = await data.getTrainingProfile();
+    const summary = prof
+      ? `${prof.experience ? prof.experience[0].toUpperCase() + prof.experience.slice(1) : "Intermediate"}`
+        + ` · ${(prof.prioritize || []).length} prioritized · ${(prof.careful || []).length} protected`
+      : "Not set up yet — answer a few questions to tailor your volume targets.";
+    container.append(
+      el("section", { class: "card" },
+        el("h2", {}, "Training profile"),
+        el("p", { class: "muted small" }, summary),
+        el("a", { class: "btn", href: "#/profile" }, prof ? "Edit training profile" : "Set up training profile"),
+      ),
+    );
+  }
+
   // Volume landmarks editor.
   if (sheetId) {
     const landmarks = await data.getLandmarks();

@@ -22,6 +22,7 @@
     "check:setcontroller": "node tools/check-setcontroller.mjs",
     "check:workout-name": "node tools/check-workout-name.mjs",
     "check:secondary": "node tools/check-secondary.mjs",
-    "check:goals": "node tools/check-goals.mjs"
+    "check:goals": "node tools/check-goals.mjs",
+    "check:profile": "node tools/check-profile.mjs"
   }
 }

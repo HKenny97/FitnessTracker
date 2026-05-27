@@ -169,6 +169,7 @@ export async function render(container, { signedIn }) {
   weekEndDate.setDate(weekEndDate.getDate() + 6);
   const weekEndIso = weekEndDate.toISOString().slice(0, 10);
   const weeklyPlan = await data.getEffectiveWeeklyPlan(weekStartIso);
+  const trainingProfile = await data.getTrainingProfile();
 
   // --- Quick stats ---
   const thisMonth = today.slice(0, 7);
@@ -210,6 +211,21 @@ export async function render(container, { signedIn }) {
       el("a", { class: "btn primary", href: "#/workout", style: { flex: "1", minWidth: "160px" } }, "▶ Start Workout"),
     ),
   );
+
+  // First-run nudge: personalize volume landmarks via the training profile.
+  if (!trainingProfile) {
+    container.append(
+      el("a", { class: "card", href: "#/profile", style: { display: "block", borderColor: "var(--gama-green)" } },
+        el("div", { class: "card-row" },
+          el("div", {},
+            el("strong", {}, "Personalize your volume targets"),
+            el("div", { class: "muted small" }, "Answer a few questions to tailor your weekly set targets to your experience and goals."),
+          ),
+          el("span", { class: "muted" }, "›"),
+        ),
+      ),
+    );
+  }
 
   // ── Tabbed analytics ──────────────────────────────────────────
   const TABS = [

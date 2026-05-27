@@ -65,6 +65,27 @@ export async function saveLandmark(muscleGroup, values) {
   invalidate("landmarks");
 }
 
+// ── Training profile ──
+// Stored as a JSON blob in the Meta tab (key/value) under "trainingProfile", so
+// it syncs across devices alongside the rest of the workbook. computeLandmarks()
+// turns it into suggested volume landmarks. Returns null when never set.
+export async function getTrainingProfile() {
+  return cached("trainingProfile", async () => {
+    const rows = await sheets.readAll("meta");
+    const row = rows.find((r) => r.key === "trainingProfile");
+    if (!row || !row.value) return null;
+    try { return JSON.parse(row.value); } catch { return null; }
+  });
+}
+
+export async function saveTrainingProfile(profile) {
+  await sheets.upsertRow("meta", "key", {
+    key: "trainingProfile",
+    value: JSON.stringify(profile || {}),
+  });
+  invalidate("trainingProfile");
+}
+
 // ── Weekly Muscle Goals ("light meso") ──
 // Day rows live in the WeeklyGoals tab. weekStart === "" is the recurring
 // default plan; a Monday ISO date is a per-week override for that week.
