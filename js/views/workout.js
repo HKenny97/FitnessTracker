@@ -858,7 +858,10 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
     el("h3", {}, ex.exercise),
     pillSummary,
   );
-  block.append(el("div", { class: "exercise-head", onclick: () => setActiveExercise(ctx) }, head));
+  block.append(el("div", { class: "exercise-head", onclick: () => setActiveExercise(ctx) },
+    head,
+    el("button", { type: "button", class: "btn small ghost exercise-edit-btn", onclick: (e) => { e.stopPropagation(); setActiveExercise(ctx); } }, "Edit"),
+  ));
 
   // Detail (set rows + a Done button) is revealed only when this card is the
   // active exercise; collapsed cards show just the pill summary above.
@@ -1688,7 +1691,10 @@ async function renderCustomMode(root, onFinish) {
           el("h3", {}, ex.exercise),
           pillSummary,
         ),
-        el("button", { class: "btn small danger ghost", onclick: (e) => { e.stopPropagation(); exercises.splice(exercises.indexOf(ex), 1); rerender(); } }, "Remove"),
+        el("div", { class: "row", style: { gap: "0.4rem" } },
+          el("button", { type: "button", class: "btn small ghost exercise-edit-btn", onclick: (e) => { e.stopPropagation(); setActiveExercise(ctx); } }, "Edit"),
+          el("button", { class: "btn small danger ghost", onclick: (e) => { e.stopPropagation(); exercises.splice(exercises.indexOf(ex), 1); rerender(); } }, "Remove"),
+        ),
       ),
     );
 

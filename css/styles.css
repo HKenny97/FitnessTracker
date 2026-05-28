@@ -433,6 +433,9 @@ input[type="number"] {
 .exercise-detail { display: none; }
 .exercise-block.exercise-active .exercise-detail { display: block; }
 .exercise-block.exercise-active .exercise-pill-summary { display: none; }
+/* "Edit" affordance: only meaningful on a collapsed card; the active card is
+   already expanded for logging. */
+.exercise-block.exercise-active .exercise-edit-btn { display: none; }
 .exercise-block.exercise-active {
   border-color: var(--gama-green);
   box-shadow: 0 0 0 1px var(--gama-green);
