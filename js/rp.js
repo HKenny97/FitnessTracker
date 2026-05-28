@@ -128,6 +128,28 @@ export const WORKOUT_PRESETS = {
 // Each entry: { name, group (primary muscle group), equipment }.
 // Compound exercises include a `secondary` array of { group, fraction }
 // describing fractional volume credit to other muscle groups per set.
+//
+// Per-pattern secondary recipe (audited against EMG/hypertrophy
+// literature — see commit history for citations per family):
+//
+//   Horizontal press (bench/push-up/dip-chest)
+//     → Triceps 0.5 + Front Delts 0.5 (decline → Front Delts 0.25)
+//   Chest fly (cable/DB/pec deck)        → Front Delts 0.25
+//   Vertical pull (pull-up/lat pulldown) → Biceps 0.5 (supinated: 0.75)
+//   Horizontal pull / Row                → Biceps 0.5 + Rear Delts 0.25 + Traps 0.25
+//   Hip hinge (RDL/SLDL/Good Morning)    → Glutes 0.5
+//   Squat (back / front / leg press)     → Glutes 0.5 + Hamstrings 0.25
+//   Quad-isolating machines (hack/V/pendulum) → Glutes 0.25 only
+//   Lunge / split squat / step-up        → Glutes 0.5 + Hamstrings 0.25
+//   Overhead press                       → Triceps 0.5 + Side Delts 0.25
+//   Upright row                          → Traps 0.25
+//   Curl (supinated)                     → Forearms 0.25
+//   Curl (hammer / reverse / pronated)   → Forearms 0.5
+//   Rear-delt fly / face pull / pull-apart → Traps 0.25
+//   Shrug                                → (none)
+//   Loaded carry (Farmer's)              → Forearms 0.5 + Abs 0.25
+//
+// Pattern invariants are enforced in tools/check-secondary.mjs.
 export const EXERCISE_LIBRARY = [
   // ── Chest ──────────────────────────────────────────────────
   { name: "Barbell Bench Press", group: "Chest", equipment: "barbell", secondary: [{ group: "Triceps", fraction: 0.5 }, { group: "Shoulders (front delts)", fraction: 0.5 }] },
@@ -148,7 +170,7 @@ export const EXERCISE_LIBRARY = [
   { name: "Dip (Chest)", group: "Chest", equipment: "bodyweight", secondary: [{ group: "Triceps", fraction: 0.5 }, { group: "Shoulders (front delts)", fraction: 0.25 }] },
   { name: "Incline Dumbbell Fly", group: "Chest", equipment: "dumbbell", secondary: [{ group: "Shoulders (front delts)", fraction: 0.25 }] },
   { name: "Machine Incline Press", group: "Chest", equipment: "machine", secondary: [{ group: "Triceps", fraction: 0.5 }, { group: "Shoulders (front delts)", fraction: 0.5 }] },
-  { name: "Svend Press", group: "Chest", equipment: "barbell" },
+  { name: "Svend Press", group: "Chest", equipment: "barbell", secondary: [{ group: "Triceps", fraction: 0.25 }, { group: "Shoulders (front delts)", fraction: 0.25 }] },
   { name: "Cable Crossover", group: "Chest", equipment: "cable", secondary: [{ group: "Shoulders (front delts)", fraction: 0.25 }] },
   { name: "Single-Arm Cable Fly", group: "Chest", equipment: "cable", secondary: [{ group: "Shoulders (front delts)", fraction: 0.25 }] },
   { name: "Standing Cable Chest Press", group: "Chest", equipment: "cable", secondary: [{ group: "Triceps", fraction: 0.5 }, { group: "Shoulders (front delts)", fraction: 0.25 }] },
