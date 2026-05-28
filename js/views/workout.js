@@ -6,9 +6,10 @@ import { startRest } from "../timer.js";
 import { setControllerExercises, setActiveExercise, refreshSetController, hideSetController, firstIncomplete, collapseActive } from "../setcontroller.js";
 import { suggestWorkoutNames, detectWorkoutType } from "../workout-name.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
-import { mondayOf, pendingDayForToday } from "../goals.js";
+import { mondayOf, pendingDayForToday, currentPhase } from "../goals.js";
 import { openExercisePicker, openFocusPicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rmTrend, sessionBestE1RMs, growthScore } from "../adaptive.js";
+import { computeReadiness } from "../readiness.js";
 import { parseSets } from "../parse-sets.js";
 import { resolveExerciseName } from "../exercise-match.js";
 import { config, isPerSide, setPerSide, getFocusGroups, setFocusGroups } from "../config.js";
@@ -511,8 +512,13 @@ async function renderMesoMode(root, active, onFinish) {
   // Ad-hoc exercises added to a session on the fly (not in the template), kept
   // per day so switching days doesn't mix them. Used to support "+ Add exercise"
   // in mesocycle mode.
-  const exerciseLib = await data.getFullExerciseLibrary();
-  const allSetsForFreq = await data.listSets();
+  const [exerciseLib, allSetsForFreq, allFeedback, recentCardio, phaseCycle] = await Promise.all([
+    data.getFullExerciseLibrary(),
+    data.listSets(),
+    data.getAllSessionFeedback(),
+    data.listCardio(),
+    data.getPhaseCycle(),
+  ]);
   const freqMap = {};
   const setsByEx = {};
   for (const s of allSetsForFreq) {
@@ -621,6 +627,31 @@ async function renderMesoMode(root, active, onFinish) {
     const suggestionPanel = await buildSuggestionPanel();
     if (suggestionPanel) mesoRoot.append(suggestionPanel);
 
+    // Pre-session readiness — needs to know what muscles today is hitting, so
+    // it has to be rebuilt on every day/week change.
+    const dayForReadiness = template.find((d) => d.index === chosenDay);
+    if (dayForReadiness) {
+      const plannedMuscles = [...new Set(dayForReadiness.exercises.map((e) => e.muscleGroup).filter(Boolean))];
+      // Count planned lifts with RIR drift from analyze()'s per-exercise check.
+      let rirDriftCount = 0;
+      for (const ex of dayForReadiness.exercises) {
+        const sets = setsByEx[ex.exercise] || [];
+        if (sets.length < 4) continue;
+        const a = analyze(ex.exercise, sets);
+        if (a?.stats?.fatigue?.rirDrift) rirDriftCount++;
+      }
+      const phase = currentPhase(mondayOf(isoToday()), phaseCycle);
+      const card = buildReadinessCard({
+        plannedMuscles,
+        recentFeedback: allFeedback,
+        recentCardio,
+        allSets: allSetsForFreq,
+        rirDriftCount,
+        mesoPhase: phase,
+      });
+      if (card) mesoRoot.append(card);
+    }
+
     mesoRoot.append(buildSessionMetaForm(session, saveSessionMeta, { locations: pastLocations }));
 
     const day = template.find((d) => d.index === chosenDay);
@@ -681,6 +712,59 @@ async function renderMesoMode(root, active, onFinish) {
   }
 
   rerender();
+}
+
+// Pre-session readiness bar. Pulls every recovery signal we already collect
+// (per-muscle feedback, last-48h cardio, days-since-last-hit, RIR drift on the
+// planned lifts, meso phase) into a single 0–100 score with an expandable
+// factor list. Returns null when no signals are available (e.g. brand-new
+// user).
+export function buildReadinessCard({ plannedMuscles, recentFeedback, recentCardio, allSets, rirDriftCount, mesoPhase }) {
+  const r = computeReadiness({ plannedMuscles, recentFeedback, recentCardio, allSets, rirDriftCount, mesoPhase });
+  // If literally nothing moved the score off the baseline AND there's no real
+  // data, hide the bar entirely so we don't waste vertical space.
+  if (!r.factors.length && (!plannedMuscles || !plannedMuscles.length)) return null;
+
+  const color = r.level === "go" ? "var(--ok)" : r.level === "back-off" ? "#ff5a1f" : "var(--warn)";
+  const heading = r.level === "go" ? "Go hard"
+    : r.level === "back-off" ? "Back off — lighter day"
+    : "Normal day";
+
+  const factorsList = el("div", { class: "muted small", style: { marginTop: "0.3rem" } });
+  let expanded = false;
+  const toggle = el("button", { type: "button", class: "btn small ghost" }, "Why?");
+  const renderFactors = () => {
+    factorsList.replaceChildren();
+    if (!expanded) return;
+    if (!r.factors.length) {
+      factorsList.append(el("div", {}, "No major signals — running with the default baseline."));
+      return;
+    }
+    for (const f of r.factors) {
+      const sign = f.delta > 0 ? "+" : "";
+      factorsList.append(
+        el("div", { class: "row", style: { justifyContent: "space-between" } },
+          el("span", {}, f.label),
+          el("span", { style: { color: f.delta > 0 ? "var(--ok)" : "#ff5a1f" } }, `${sign}${f.delta}`),
+        ),
+      );
+    }
+  };
+  toggle.onclick = () => { expanded = !expanded; toggle.textContent = expanded ? "Hide" : "Why?"; renderFactors(); };
+
+  return el("section", { class: "card", style: { borderLeft: `4px solid ${color}` } },
+    el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center" } },
+      el("div", {},
+        el("strong", {}, `Readiness ${r.score}`),
+        el("span", { class: "muted small", style: { marginLeft: "0.5rem" } }, heading),
+      ),
+      toggle,
+    ),
+    el("div", { style: { height: "8px", background: "var(--panel-2)", borderRadius: "4px", overflow: "hidden", marginTop: "0.4rem" } },
+      el("div", { style: { width: r.score + "%", height: "100%", background: color } }),
+    ),
+    factorsList,
+  );
 }
 
 // Renders the "Adjust this week" recommendations with per-muscle reasoning and
@@ -1171,12 +1255,17 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
 // ── Custom mode ──
 
 async function renderCustomMode(root, onFinish) {
-  const exerciseLib = await data.getFullExerciseLibrary();
+  const [exerciseLib, allSets, allFeedback, recentCardioForRdy, phaseCycle] = await Promise.all([
+    data.getFullExerciseLibrary(),
+    data.listSets(),
+    data.getAllSessionFeedback(),
+    data.listCardio(),
+    data.getPhaseCycle(),
+  ]);
   const exercises = [];
 
   // Past usage ranks exercise suggestions; today's custom sets are restored so
   // the user can continue after a refresh.
-  const allSets = await data.listSets();
   const freqMap = {};
   const setsByExCustom = {};
   for (const s of allSets) {
@@ -1222,7 +1311,7 @@ async function renderCustomMode(root, onFinish) {
   }
 
   // Restore today's cardio so it shows alongside strength in the same list.
-  const todayCardio = (await data.listCardio()).filter((c) => c.date === isoToday());
+  const todayCardio = recentCardioForRdy.filter((c) => c.date === isoToday());
   for (const c of todayCardio) {
     exercises.push({
       kind: "cardio", id: c.id, cardioType: c.cardioType, saved: true,
@@ -1565,6 +1654,35 @@ async function renderCustomMode(root, onFinish) {
     }
 
     customRoot.append(buildFocusCard());
+
+    // Pre-session readiness — uses the focus muscles for today; falls back to
+    // anything already on the workout when no focus is set.
+    {
+      const focus = targetGroups.size
+        ? [...targetGroups]
+        : [...new Set(exercises.filter((e) => e.kind !== "cardio").map((e) => e.muscleGroup).filter(Boolean))];
+      if (focus.length) {
+        let rirDriftCount = 0;
+        for (const ex of exercises) {
+          if (ex.kind === "cardio") continue;
+          const sets = setsByExCustom[ex.exercise] || [];
+          if (sets.length < 4) continue;
+          const a = analyze(ex.exercise, sets);
+          if (a?.stats?.fatigue?.rirDrift) rirDriftCount++;
+        }
+        const phase = currentPhase(weekStartIso, phaseCycle);
+        const card = buildReadinessCard({
+          plannedMuscles: focus,
+          recentFeedback: allFeedback,
+          recentCardio: recentCardioForRdy,
+          allSets,
+          rirDriftCount,
+          mesoPhase: phase,
+        });
+        if (card) customRoot.append(card);
+      }
+    }
+
     customRoot.append(buildSessionMetaForm(session, saveSessionMeta, { locations: pastLocations }));
     const suggestions = buildSuggestions();
     if (suggestions) customRoot.append(suggestions);
