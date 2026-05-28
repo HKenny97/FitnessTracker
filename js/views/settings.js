@@ -3,6 +3,7 @@ import { config, setClientId, setDisplayUnit, setRestTimerEnabled, setRestTimerS
 import * as sheets from "../sheets.js";
 import * as data from "../data.js";
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from "../rp.js";
+import { DEFAULT_PHASE_TEMPLATE, PHASE_LABELS, mondayOf, currentPhase } from "../goals.js";
 import { seedDemoData, removeDemoData } from "../seed.js";
 
 // A device-link URL points another device at the same workbook. The /link/:id
@@ -341,6 +342,87 @@ export async function render(container) {
           ),
     ),
   );
+
+  // Mesocycle phase template — the recurring accumulation/overreach/deload
+  // wave that scales Weekly Muscle Goals targets each week.
+  if (sheetId) {
+    const cycle = (await data.getPhaseCycle()) || null;
+    const todayMonday = mondayOf(new Date().toISOString().slice(0, 10));
+    let anchor = cycle?.anchorWeek || todayMonday;
+    let template = (cycle?.template && cycle.template.length)
+      ? cycle.template.map((t) => ({ phase: t.phase || "accumulation", multiplier: +t.multiplier || 1.0 }))
+      : DEFAULT_PHASE_TEMPLATE.map((t) => ({ ...t }));
+    const card = el("section", { class: "card" }, el("h2", {}, "Mesocycle phase cycle"));
+    const desc = el("p", { class: "muted small" },
+      "A recurring multi-week wave that scales your Weekly Muscle Goals targets. ",
+      "The default light-meso is 4 weeks: two accumulation weeks, an overreach, then a deload. ",
+      "The cycle repeats indefinitely from the anchor week.");
+    card.append(desc);
+
+    function renderEditor() {
+      const editor = el("div", {});
+      const phaseNow = currentPhase(todayMonday, { anchorWeek: anchor, template });
+      editor.append(
+        el("div", { class: "muted small", style: { marginBottom: "0.4rem" } },
+          phaseNow
+            ? `This week (${todayMonday}) is in ${PHASE_LABELS[phaseNow.phase] || phaseNow.phase} (week ${phaseNow.weekNumber}/${phaseNow.totalWeeks}) at ${Math.round(phaseNow.multiplier * 100)}%.`
+            : "Pick an anchor week and save the cycle to activate it."),
+      );
+      const anchorField = el("div", { class: "field" },
+        el("label", { class: "muted small" }, "Anchor week (Monday ISO)"),
+        el("input", { type: "date", value: anchor, oninput: (e) => { anchor = mondayOf(e.target.value || todayMonday); renderEditor(); } }),
+      );
+      editor.append(anchorField);
+
+      const table = el("table", { class: "meso-grid" });
+      table.append(el("thead", {}, el("tr", {},
+        el("th", { style: { textAlign: "left" } }, "Week"),
+        el("th", {}, "Phase"),
+        el("th", {}, "Multiplier"),
+        el("th", {}, ""),
+      )));
+      const tbody = el("tbody", {});
+      template.forEach((row, i) => {
+        const sel = el("select", { onchange: (e) => { row.phase = e.target.value; renderEditor(); } },
+          ...Object.entries(PHASE_LABELS).map(([key, label]) =>
+            el("option", { value: key, selected: row.phase === key ? "" : null }, label)),
+        );
+        const mult = el("input", { type: "number", step: "0.05", min: "0", value: row.multiplier, style: { width: "80px" }, oninput: (e) => { row.multiplier = +e.target.value || 0; } });
+        const removeBtn = el("button", { class: "btn small danger ghost", onclick: () => { template.splice(i, 1); renderEditor(); } }, "×");
+        tbody.append(el("tr", {},
+          el("td", {}, String(i + 1)),
+          el("td", {}, sel),
+          el("td", {}, mult),
+          el("td", {}, template.length > 1 ? removeBtn : null),
+        ));
+      });
+      table.append(tbody);
+      editor.append(table);
+
+      const addBtn = el("button", { class: "btn small", style: { marginTop: "0.4rem" } }, "Add week");
+      addBtn.onclick = () => { template.push({ phase: "accumulation", multiplier: 1.0 }); renderEditor(); };
+
+      const saveBtn = el("button", { class: "btn small primary" }, "Save cycle");
+      saveBtn.onclick = withLoading(saveBtn, async () => {
+        await run(data.savePhaseCycle({ anchorWeek: anchor, template }), { ok: "Phase cycle saved" });
+      });
+      const resetBtn = el("button", { class: "btn small ghost" }, "Reset to default");
+      resetBtn.onclick = () => {
+        template = DEFAULT_PHASE_TEMPLATE.map((t) => ({ ...t }));
+        anchor = todayMonday;
+        renderEditor();
+      };
+      editor.append(el("div", { class: "row", style: { gap: "0.4rem", marginTop: "0.5rem" } }, addBtn, saveBtn, resetBtn));
+
+      // Replace the previous editor in-place. We append a wrapper once and
+      // replace its contents on every re-render.
+      editorWrap.replaceChildren(editor);
+    }
+    const editorWrap = el("div", {});
+    card.append(editorWrap);
+    renderEditor();
+    container.append(card);
+  }
 
   // Training profile — questionnaire that auto-personalizes volume landmarks.
   if (sheetId) {

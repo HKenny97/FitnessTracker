@@ -9,7 +9,7 @@ import {
 } from "../adaptive.js";
 import { exerciseSecondary, MUSCLE_REFERENCE } from "../rp.js";
 import { sessionZone } from "../suggest.js";
-import { mondayOf, weekdayIndex, distributeWeeklyGoal, weeklyGoalWarnings, WEEKDAYS } from "../goals.js";
+import { mondayOf, weekdayIndex, distributeWeeklyGoal, weeklyGoalWarnings, currentPhase, PHASE_LABELS, WEEKDAYS } from "../goals.js";
 
 const DIST_COLORS = ["#39b54a", "#4da6ff", "#ffb547", "#c97bff", "#ff5a1f", "#36c4b7", "#f06292", "#9ccc65"];
 const TAB_LS_KEY = "gama.dashTab";
@@ -170,6 +170,8 @@ export async function render(container, { signedIn }) {
   const weekEndIso = weekEndDate.toISOString().slice(0, 10);
   const weeklyPlan = await data.getEffectiveWeeklyPlan(weekStartIso);
   const trainingProfile = await data.getTrainingProfile();
+  const phaseCycle = await data.getPhaseCycle();
+  const weeklyPhase = currentPhase(weekStartIso, phaseCycle);
 
   // --- Quick stats ---
   const thisMonth = today.slice(0, 7);
@@ -382,7 +384,7 @@ export async function render(container, { signedIn }) {
     // ── Weekly Muscle Goals ("light meso") ──
     if (weeklyPlan.length) {
       const todayWd = weekdayIndex(today);
-      const dist = distributeWeeklyGoal(weeklyPlan, landmarks);
+      const dist = distributeWeeklyGoal(weeklyPlan, landmarks, { phase: weeklyPhase });
 
       // Sets logged this calendar week, direct + fractional secondary credit.
       const logged = {};
@@ -399,6 +401,18 @@ export async function render(container, { signedIn }) {
           el("a", { class: "btn small ghost", href: "#/plan/weekly" }, "Edit"),
         ),
       );
+
+      if (weeklyPhase) {
+        const phaseTone = weeklyPhase.phase === "deload" ? "warn"
+          : weeklyPhase.phase === "overreach" ? "ok" : "";
+        card.append(
+          el("div", { class: "row", style: { gap: "0.4rem", alignItems: "center", marginTop: "0.4rem" } },
+            el("span", { class: "zone-pill" + (phaseTone ? " " + phaseTone : ""), style: { background: weeklyPhase.phase === "deload" ? "var(--warn)" : weeklyPhase.phase === "overreach" ? "var(--accent)" : "var(--panel-2)" } },
+              `${PHASE_LABELS[weeklyPhase.phase] || weeklyPhase.phase} · week ${weeklyPhase.weekNumber}/${weeklyPhase.totalWeeks}`),
+            el("span", { class: "muted small" }, `${Math.round(weeklyPhase.multiplier * 100)}% of MAV-mid`),
+          ),
+        );
+      }
 
       // Day schedule with today highlighted.
       const sched = el("div", { class: "chip-row", style: { marginTop: "0.5rem" } });

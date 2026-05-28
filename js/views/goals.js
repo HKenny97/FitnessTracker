@@ -1,7 +1,7 @@
 import { el, isoToday, run, toast, withLoading, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { MUSCLE_REGIONS, WORKOUT_PRESETS, MUSCLE_REFERENCE } from "../rp.js";
-import { WEEKDAYS, mondayOf, distributeWeeklyGoal, weeklyGoalWarnings } from "../goals.js";
+import { WEEKDAYS, mondayOf, distributeWeeklyGoal, weeklyGoalWarnings, currentPhase, PHASE_LABELS, DEFAULT_PHASE_TEMPLATE } from "../goals.js";
 import { detectWorkoutType } from "../workout-name.js";
 import { navigate } from "../router.js";
 
@@ -10,6 +10,8 @@ const shortMuscle = (g) => formatMuscle(String(g || "").replace(/^Shoulders \((.
 export async function render(container) {
   const landmarks = await data.getLandmarks();
   const thisMonday = mondayOf(isoToday());
+  const phaseCycle = await data.getPhaseCycle();
+  const phaseNow = currentPhase(thisMonday, phaseCycle);
 
   // scope: "default" = recurring plan; "week" = override for the current week.
   let scope = "default";
@@ -52,6 +54,35 @@ export async function render(container) {
       el("p", { class: "muted small" },
         "A light plan: choose your training days and the muscles on each. We split each muscle's weekly set target across its days using your volume landmarks."),
     );
+
+    // Active phase banner (current week of the recurring cycle).
+    if (phaseNow && scope === "week") {
+      const tint = phaseNow.phase === "deload" ? "var(--warn)"
+        : phaseNow.phase === "overreach" ? "var(--accent)" : "var(--panel-2)";
+      container.append(
+        el("div", { class: "card", style: { borderColor: tint } },
+          el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center" } },
+            el("div", {},
+              el("strong", {}, `Phase: ${PHASE_LABELS[phaseNow.phase] || phaseNow.phase}`),
+              el("div", { class: "muted small" }, `Week ${phaseNow.weekNumber}/${phaseNow.totalWeeks} of the cycle · scales weekly targets by ${Math.round(phaseNow.multiplier * 100)}%`),
+            ),
+            el("a", { class: "btn small ghost", href: "#/settings" }, "Cycle…"),
+          ),
+        ),
+      );
+    } else if (scope === "week" && !phaseNow) {
+      container.append(
+        el("div", { class: "card", style: { borderColor: "var(--panel-2)" } },
+          el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center" } },
+            el("div", {},
+              el("strong", {}, "Flat plan"),
+              el("div", { class: "muted small" }, "Set up a phase cycle in Settings to add accumulation / overreach / deload waves."),
+            ),
+            el("a", { class: "btn small ghost", href: "#/settings" }, "Set up…"),
+          ),
+        ),
+      );
+    }
 
     // Scope toggle.
     const scopeRow = el("div", { class: "chip-row", style: { marginBottom: "0.6rem" } });
@@ -127,9 +158,16 @@ export async function render(container) {
 
     const plan = planDays();
 
-    // Distribution summary.
-    const dist = distributeWeeklyGoal(plan, landmarks);
-    const distCard = el("section", { class: "card" }, el("h3", {}, "Weekly distribution"));
+    // Distribution summary. When previewing a single week, scale by the active
+    // phase multiplier so the editor reflects what the dashboard will show.
+    const distPhase = scope === "week" ? phaseNow : null;
+    const dist = distributeWeeklyGoal(plan, landmarks, { phase: distPhase });
+    const distHead = distPhase
+      ? el("h3", {}, "Weekly distribution",
+          el("span", { class: "muted small", style: { marginLeft: "0.5rem" } },
+            `· ${PHASE_LABELS[distPhase.phase] || distPhase.phase} ${Math.round(distPhase.multiplier * 100)}%`))
+      : el("h3", {}, "Weekly distribution");
+    const distCard = el("section", { class: "card" }, distHead);
     const muscles = Object.keys(dist).sort();
     if (!muscles.length) {
       distCard.append(el("p", { class: "muted small" }, "Add muscle groups to a day to see the split."));

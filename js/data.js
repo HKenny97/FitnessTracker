@@ -10,7 +10,7 @@ import {
   suggestSetAdjustment,
   exerciseSecondary,
 } from "./rp.js";
-import { resolvePlanForWeek } from "./goals.js";
+import { resolvePlanForWeek, DEFAULT_PHASE_TEMPLATE } from "./goals.js";
 
 export const CUSTOM_MESO_ID = "_custom";
 
@@ -84,6 +84,34 @@ export async function saveTrainingProfile(profile) {
     value: JSON.stringify(profile || {}),
   });
   invalidate("trainingProfile");
+}
+
+// ── Light-meso phase cycle ──
+// JSON blob in the Meta tab under "phaseCycle": { anchorWeek, template:
+// [{ phase, multiplier }] }. Used by Weekly Muscle Goals to scale weekly volume
+// across a recurring 4-week (default) accumulation→overreach→deload pattern.
+// Returns null when the user has never set one up; the goals view falls back to
+// flat MAV-mid targets in that case.
+export async function getPhaseCycle() {
+  return cached("phaseCycle", async () => {
+    const rows = await sheets.readAll("meta");
+    const row = rows.find((r) => r.key === "phaseCycle");
+    if (!row || !row.value) return null;
+    try {
+      const parsed = JSON.parse(row.value);
+      if (!parsed || !parsed.anchorWeek || !Array.isArray(parsed.template) || !parsed.template.length) return null;
+      return parsed;
+    } catch { return null; }
+  });
+}
+
+export async function savePhaseCycle(cycle) {
+  const safe = {
+    anchorWeek: String(cycle?.anchorWeek || ""),
+    template: Array.isArray(cycle?.template) && cycle.template.length ? cycle.template : DEFAULT_PHASE_TEMPLATE,
+  };
+  await sheets.upsertRow("meta", "key", { key: "phaseCycle", value: JSON.stringify(safe) });
+  invalidate("phaseCycle");
 }
 
 // ── Weekly Muscle Goals ("light meso") ──

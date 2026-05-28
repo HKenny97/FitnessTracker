@@ -5,6 +5,7 @@
 import {
   mavMidTarget, mondayOf, weekdayIndex, resolvePlanForWeek,
   distributeWeeklyGoal, weeklyGoalWarnings, pendingDayForToday,
+  currentPhase, DEFAULT_PHASE_TEMPLATE,
 } from "../js/goals.js";
 import { MUSCLE_REFERENCE } from "../js/rp.js";
 
@@ -84,6 +85,40 @@ if (mondayOf("2026-05-25") !== "2026-05-25") fail("mondayOf Mon should be itself
   if (pendingDayForToday(plan, 2).dayName !== "Legs") fail("pending @2 ≠ Legs");
   if (pendingDayForToday(plan, 3) !== null) fail("pending @3 ≠ null (week done)");
   if (pendingDayForToday([], 0) !== null) fail("empty plan ≠ null");
+}
+
+// currentPhase resolves the right template entry for a given Monday.
+{
+  // Anchor 2026-05-25 (Mon). Default 4-week template: accum/accum/overreach/deload.
+  const cycle = { anchorWeek: "2026-05-25", template: DEFAULT_PHASE_TEMPLATE };
+  const w1 = currentPhase("2026-05-25", cycle);
+  if (!w1 || w1.phase !== "accumulation" || w1.weekNumber !== 1) fail(`phase week1 → ${JSON.stringify(w1)}`);
+  const w3 = currentPhase("2026-06-08", cycle);
+  if (!w3 || w3.phase !== "overreach" || w3.weekNumber !== 3) fail(`phase week3 → ${JSON.stringify(w3)}`);
+  const w4 = currentPhase("2026-06-15", cycle);
+  if (!w4 || w4.phase !== "deload" || w4.weekNumber !== 4) fail(`phase week4 → ${JSON.stringify(w4)}`);
+  // Wraps back to week 1 after the cycle ends.
+  const w5 = currentPhase("2026-06-22", cycle);
+  if (!w5 || w5.weekNumber !== 1) fail(`phase wrap → ${JSON.stringify(w5)}`);
+  // Weeks before the anchor wrap backward correctly.
+  const wPrev = currentPhase("2026-05-18", cycle);
+  if (!wPrev || wPrev.weekNumber !== 4) fail(`phase before-anchor → ${JSON.stringify(wPrev)}`);
+  if (currentPhase("2026-05-25", null) !== null) fail("phase null cycle → not null");
+  if (currentPhase("", cycle) !== null) fail("phase empty week → not null");
+}
+
+// distributeWeeklyGoal scales by the phase multiplier when supplied.
+{
+  const plan = [{ weekday: 0, groups: ["Chest"] }, { weekday: 3, groups: ["Chest"] }];
+  const flat = distributeWeeklyGoal(plan, landmarks);
+  if (flat.Chest.target !== 16) fail(`phase flat target → ${flat.Chest.target}`);
+  const deload = distributeWeeklyGoal(plan, landmarks, { phase: { phase: "deload", multiplier: 0.5 } });
+  if (deload.Chest.target !== 8) fail(`phase deload target → ${deload.Chest.target}`);
+  // perDay sums to the scaled target.
+  const sum = Object.values(deload.Chest.perDay).reduce((a, b) => a + b, 0);
+  if (sum !== 8) fail(`phase deload split sums → ${sum}`);
+  const overreach = distributeWeeklyGoal(plan, landmarks, { phaseMultiplier: 1.1 });
+  if (overreach.Chest.target !== 18) fail(`phase overreach target → ${overreach.Chest.target}`);
 }
 
 if (failures) { console.error(`\n${failures} weekly-goals check failure(s).`); process.exit(1); }
