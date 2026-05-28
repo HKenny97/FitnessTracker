@@ -72,6 +72,27 @@ export function distributeWeeklyGoal(planDays, landmarks) {
   return out;
 }
 
+// Per-day session prescription: pivots distributeWeeklyGoal so each training
+// day lists its muscles with the prescribed sets and the daily total. Sorted by
+// weekday. Returns [{ weekday, dayName, muscles:[{muscle,sets}], totalSets }].
+export function dailyVolume(planDays, landmarks) {
+  const dist = distributeWeeklyGoal(planDays, landmarks);
+  return (planDays || []).slice()
+    .sort((a, b) => a.weekday - b.weekday)
+    .map((day) => {
+      const muscles = (day.groups || []).map((m) => ({
+        muscle: m,
+        sets: (dist[m] && dist[m].perDay[day.weekday]) || 0,
+      }));
+      const totalSets = muscles.reduce((s, x) => s + x.sets, 0);
+      return { weekday: day.weekday, dayName: day.dayName || "", muscles, totalSets };
+    });
+}
+
+// Soft ceiling on a single session's total working sets — past this, the day is
+// hard to recover from and to fit in one session. Used by weeklyGoalWarnings.
+export const MAX_SESSION_SETS = 30;
+
 // Plan-quality warnings: a day overloads a muscle past its per-session cap, or a
 // muscle is trained on days less than ~48 h apart, or there's no rest day.
 // Returns [{ level: "warn"|"ok", msg }]. `reference` is rp.MUSCLE_REFERENCE.
@@ -110,6 +131,22 @@ export function weeklyGoalWarnings(planDays, landmarks, reference) {
           msg: `${muscle} trained ${WEEKDAYS[a]} & ${WEEKDAYS[b]} — under 48 h recovery.`,
         });
       }
+    }
+  }
+
+  // High session volume: a single day's total working sets is excessive.
+  const totalsByWd = {};
+  for (const info of Object.values(dist)) {
+    for (const [wd, n] of Object.entries(info.perDay)) totalsByWd[wd] = (totalsByWd[wd] || 0) + n;
+  }
+  for (const day of planDays || []) {
+    const t = totalsByWd[day.weekday] || 0;
+    if (t > MAX_SESSION_SETS) {
+      const suffix = day.dayName ? ` (${day.dayName})` : "";
+      warnings.push({
+        level: "warn",
+        msg: `${WEEKDAYS[day.weekday]}${suffix}: ${t} sets in one session — high volume, consider splitting across more days.`,
+      });
     }
   }
 

@@ -411,6 +411,27 @@ export async function render(container, { signedIn }) {
       }
       card.append(sched);
 
+      // Today's session prescription, when today is a plan day.
+      const todayPlan = weeklyPlan.find((d) => d.weekday === todayWd);
+      if (todayPlan && todayPlan.groups.length) {
+        const perMuscle = todayPlan.groups.map((g) => ({
+          g, sets: (dist[g] && dist[g].perDay[todayWd]) || 0,
+        }));
+        const totalSets = perMuscle.reduce((s, m) => s + m.sets, 0);
+        const label = perMuscle.some((m) => m.sets > 0)
+          ? perMuscle.map((m) => `${formatMuscle(m.g)} ${m.sets}`).join(" · ")
+          : todayPlan.groups.map(formatMuscle).join(" · ");
+        card.append(
+          el("div", { style: { marginTop: "0.6rem", padding: "0.5rem 0.7rem", background: "var(--panel-2)", borderRadius: "var(--radius-sm)" } },
+            el("div", { class: "row", style: { justifyContent: "space-between" } },
+              el("strong", {}, `Today’s session${todayPlan.dayName ? " · " + todayPlan.dayName : ""}`),
+              totalSets > 0 ? el("span", { class: "muted small" }, `${totalSets} sets`) : null,
+            ),
+            el("div", { class: "muted small" }, label),
+          ),
+        );
+      }
+
       // Per-muscle weekly progress vs target.
       const muscles = Object.keys(dist).sort();
       for (const m of muscles) {

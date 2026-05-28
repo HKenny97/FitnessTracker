@@ -1,7 +1,7 @@
 import { el, isoToday, run, toast, withLoading, formatMuscle } from "../ui.js";
 import * as data from "../data.js";
 import { MUSCLE_REGIONS, WORKOUT_PRESETS, MUSCLE_REFERENCE } from "../rp.js";
-import { WEEKDAYS, mondayOf, distributeWeeklyGoal, weeklyGoalWarnings } from "../goals.js";
+import { WEEKDAYS, mondayOf, distributeWeeklyGoal, dailyVolume, weeklyGoalWarnings } from "../goals.js";
 import { detectWorkoutType } from "../workout-name.js";
 import { navigate } from "../router.js";
 
@@ -146,6 +146,28 @@ export async function render(container) {
       );
     }
     container.append(distCard);
+
+    // Daily volume: per-day session prescription (muscles × sets, daily total).
+    const daily = dailyVolume(plan, landmarks);
+    if (daily.length) {
+      const dailyCard = el("section", { class: "card" }, el("h3", {}, "Daily volume"));
+      for (const d of daily) {
+        const head = `${WEEKDAYS[d.weekday]}${d.dayName ? " · " + d.dayName : ""}`;
+        const perMuscle = d.muscles.length
+          ? d.muscles.map((m) => `${shortMuscle(m.muscle)} ${m.sets}`).join(" · ")
+          : "—";
+        dailyCard.append(
+          el("div", { style: { marginTop: "0.5rem" } },
+            el("div", { class: "row", style: { justifyContent: "space-between" } },
+              el("strong", {}, head),
+              el("span", { class: "muted small" }, `${d.totalSets} set${d.totalSets === 1 ? "" : "s"}`),
+            ),
+            el("div", { class: "muted small" }, perMuscle),
+          ),
+        );
+      }
+      container.append(dailyCard);
+    }
 
     // Warnings.
     for (const w of weeklyGoalWarnings(plan, landmarks, MUSCLE_REFERENCE)) {

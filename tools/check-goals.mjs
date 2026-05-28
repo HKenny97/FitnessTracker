@@ -4,7 +4,8 @@
 //   node tools/check-goals.mjs   (or: npm run check:goals)
 import {
   mavMidTarget, mondayOf, weekdayIndex, resolvePlanForWeek,
-  distributeWeeklyGoal, weeklyGoalWarnings, pendingDayForToday,
+  distributeWeeklyGoal, dailyVolume, MAX_SESSION_SETS,
+  weeklyGoalWarnings, pendingDayForToday,
 } from "../js/goals.js";
 import { MUSCLE_REFERENCE } from "../js/rp.js";
 
@@ -84,6 +85,42 @@ if (mondayOf("2026-05-25") !== "2026-05-25") fail("mondayOf Mon should be itself
   if (pendingDayForToday(plan, 2).dayName !== "Legs") fail("pending @2 ≠ Legs");
   if (pendingDayForToday(plan, 3) !== null) fail("pending @3 ≠ null (week done)");
   if (pendingDayForToday([], 0) !== null) fail("empty plan ≠ null");
+}
+
+// dailyVolume pivots distributeWeeklyGoal into per-day { muscles, totalSets }.
+{
+  const plan = [
+    { weekday: 0, dayName: "Push", groups: ["Chest", "Back"] },
+    { weekday: 3, dayName: "Pull", groups: ["Chest", "Back"] },
+  ];
+  const daily = dailyVolume(plan, landmarks);
+  if (daily.length !== 2) fail(`dailyVolume length → ${daily.length}`);
+  if (daily[0].weekday !== 0 || daily[1].weekday !== 3) fail("dailyVolume not sorted by weekday");
+  const dist = distributeWeeklyGoal(plan, landmarks);
+  for (const d of daily) {
+    for (const m of d.muscles) {
+      const expected = dist[m.muscle].perDay[d.weekday];
+      if (m.sets !== expected) fail(`${m.muscle} on ${d.weekday}: ${m.sets} ≠ dist ${expected}`);
+    }
+    const sum = d.muscles.reduce((s, m) => s + m.sets, 0);
+    if (sum !== d.totalSets) fail(`totalSets mismatch on weekday ${d.weekday}: ${d.totalSets} ≠ ${sum}`);
+  }
+  if (dailyVolume([], landmarks).length !== 0) fail("empty plan → non-empty dailyVolume");
+}
+
+// High-session warning fires past MAX_SESSION_SETS and not below it.
+{
+  // Many muscles all on one day → easily exceeds the cap.
+  const heavy = [{ weekday: 0, dayName: "Everything", groups: ["Chest", "Back", "Quads", "Shoulders (side delts)", "Biceps", "Triceps"] }];
+  const dailyHeavy = dailyVolume(heavy, landmarks);
+  if (!(dailyHeavy[0].totalSets > MAX_SESSION_SETS)) fail(`expected heavy day > ${MAX_SESSION_SETS}, got ${dailyHeavy[0].totalSets}`);
+  const w = weeklyGoalWarnings(heavy, landmarks, MUSCLE_REFERENCE);
+  if (!w.some((x) => /high volume/.test(x.msg))) fail("high-session warning missing on heavy day");
+
+  // A modest single-muscle day stays quiet.
+  const light = [{ weekday: 0, dayName: "Chest only", groups: ["Chest"] }];
+  const w2 = weeklyGoalWarnings(light, landmarks, MUSCLE_REFERENCE);
+  if (w2.some((x) => /high volume/.test(x.msg))) fail("high-session warning fired on light day");
 }
 
 if (failures) { console.error(`\n${failures} weekly-goals check failure(s).`); process.exit(1); }

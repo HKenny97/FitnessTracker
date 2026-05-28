@@ -6,7 +6,7 @@ import { startRest } from "../timer.js";
 import { setControllerExercises, setActiveExercise, refreshSetController, hideSetController, firstIncomplete, collapseActive } from "../setcontroller.js";
 import { suggestWorkoutNames, detectWorkoutType } from "../workout-name.js";
 import { suggestForGroups, sessionZone } from "../suggest.js";
-import { mondayOf, pendingDayForToday } from "../goals.js";
+import { mondayOf, pendingDayForToday, distributeWeeklyGoal } from "../goals.js";
 import { openExercisePicker, openFocusPicker } from "../exercise-picker.js";
 import { analyze, adaptiveSuggestWeight, performanceReason, sessionVerdict, e1rmTrend, sessionBestE1RMs } from "../adaptive.js";
 import { parseSets } from "../parse-sets.js";
@@ -1172,6 +1172,8 @@ async function renderCustomMode(root, onFinish) {
   const todayIso = isoToday();
   const weekStartIso = mondayOf(todayIso);
   const weeklyPlan = await data.getEffectiveWeeklyPlan(weekStartIso);
+  const planLandmarks = weeklyPlan.length ? await data.getLandmarks() : null;
+  const weeklyDist = weeklyPlan.length ? distributeWeeklyGoal(weeklyPlan, planLandmarks) : {};
   const priorDaysThisWeek = new Set(
     allSets.filter((s) => s.mesoId === CUSTOM_MESO_ID && s.date >= weekStartIso && s.date < todayIso).map((s) => s.date),
   );
@@ -1344,7 +1346,13 @@ async function renderCustomMode(root, onFinish) {
   function buildTodayPlanCard() {
     if (!prescribed) return null;
     const name = prescribed.dayName || detectWorkoutType(prescribed.groups) || "Today's plan";
-    const groupsLabel = prescribed.groups.map(shortMuscle).join(" · ");
+    const perMuscle = prescribed.groups.map((g) => ({
+      g, sets: (weeklyDist[g] && weeklyDist[g].perDay[prescribed.weekday]) || 0,
+    }));
+    const setsLabel = perMuscle.some((m) => m.sets > 0)
+      ? perMuscle.map((m) => `${shortMuscle(m.g)} ${m.sets}`).join(" · ")
+      : prescribed.groups.map(shortMuscle).join(" · ");
+    const totalSets = perMuscle.reduce((s, m) => s + m.sets, 0);
     const applied = prescribed.groups.length === targetGroups.size
       && prescribed.groups.every((g) => targetGroups.has(g));
     return el("section", { class: "card", style: { borderColor: "var(--gama-green)" } },
@@ -1352,13 +1360,14 @@ async function renderCustomMode(root, onFinish) {
         el("div", {},
           el("div", { class: "muted small" }, "Today’s plan"),
           el("strong", { style: { fontSize: "1.1rem" } }, name),
+          totalSets > 0 ? el("span", { class: "muted small", style: { marginLeft: "0.5rem" } }, `${totalSets} sets`) : null,
         ),
         applied ? null : el("button", {
           class: "btn small primary",
           onclick: () => { targetGroups.clear(); prescribed.groups.forEach((g) => targetGroups.add(g)); commitFocus(); },
         }, "Apply"),
       ),
-      groupsLabel ? el("div", { class: "muted small", style: { marginTop: "0.3rem" } }, groupsLabel) : null,
+      setsLabel ? el("div", { class: "muted small", style: { marginTop: "0.3rem" } }, setsLabel) : null,
     );
   }
 
