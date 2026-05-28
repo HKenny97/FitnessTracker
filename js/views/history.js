@@ -1,4 +1,4 @@
-import { el, fmtDate, isoToday, confirmModal, withLoading, run, toast, formatMuscle } from "../ui.js";
+import { el, fmtDate, isoToday, confirmModal, withLoading, run, toast, formatMuscle, buildSessionMetaForm, buildWorkoutNameField } from "../ui.js";
 import * as data from "../data.js";
 import { CUSTOM_MESO_ID } from "../data.js";
 import { drawChart } from "../chart.js";
@@ -68,6 +68,45 @@ export async function render(container) {
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     document.body.append(overlay);
     renderSummary(body, mesoId, date, () => overlay.remove());
+  }
+
+  // Edit a past session's metadata (name, times, location, RPE, leaf, notes).
+  // Reuses the Train-view form components; saveSession upserts on the existing
+  // (mesoId, week, dayIndex, date) key, so set rows are untouched.
+  async function openEditSessionModal(sess) {
+    const locations = await data.getPastLocations();
+    const draft = {
+      name: sess.name || "",
+      startTime: sess.startTime || "",
+      endTime: sess.endTime || "",
+      location: sess.location || "",
+      totalRPE: sess.totalRPE || "",
+      leafStatus: sess.leafStatus || "No",
+      notes: sess.notes || "",
+    };
+    const overlay = el("div", { class: "modal-overlay" });
+    const close = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    const onSave = async () => {
+      await run(data.saveSession({
+        mesoId: sess.mesoId, week: sess.week, dayIndex: sess.dayIndex, date: sess.date,
+        ...draft,
+      }), { ok: "Session updated" });
+      Object.assign(sess, draft);
+      close();
+      rerender();
+    };
+    overlay.append(
+      el("div", { class: "modal-card" },
+        el("div", { class: "card-row" },
+          el("h3", { style: { margin: 0 } }, "Edit session"),
+          el("button", { type: "button", class: "btn small ghost", title: "Close", "aria-label": "Close", onclick: close }, "×"),
+        ),
+        buildWorkoutNameField(draft),
+        buildSessionMetaForm(draft, onSave, { locations }),
+      ),
+    );
+    document.body.append(overlay);
   }
 
   // -- Helpers for comparisons --
@@ -201,9 +240,13 @@ export async function render(container) {
     summaryBtn.onclick = () => openSummaryModal(dateSets[0].mesoId, date);
     detail.append(summaryBtn);
 
-    // Session delete button
+    // Session-level actions (edit metadata / delete).
     const sess = dateSessions ? dateSessions[0] : null;
     if (sess) {
+      const editBtn = el("button", { class: "btn small", style: { marginTop: "0.5rem", marginRight: "0.5rem" } }, "Edit session");
+      editBtn.onclick = () => openEditSessionModal(sess);
+      detail.append(editBtn);
+
       const delBtn = el("button", { class: "btn small danger ghost", style: { marginTop: "0.5rem" } }, "Delete session");
       delBtn.onclick = () => {
         confirmModal("Delete this workout and all its sets?", async () => {

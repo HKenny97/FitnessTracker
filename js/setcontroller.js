@@ -54,6 +54,47 @@ let onAddExercise = null; // optional "+ Add exercise" handler for the dropdown
 
 const liveCtx = () => (activeCtx && document.contains(activeCtx.cardEl) ? activeCtx : null);
 
+// Horizontal drag-to-scrub on a value input: slide right to increase, left to
+// decrease, stepping by the field's step. A short press (below the threshold)
+// is left untouched so a plain tap still focuses the input for typing. Mirrors
+// the vertical scrub on the session-feedback cells, adapted for a number input.
+const SCRUB_STEP_PX = 22;     // horizontal travel per step
+const SCRUB_THRESHOLD = 6;    // px before a drag is recognised (tap below this)
+function attachScrub(input, spec) {
+  let startX = 0, startY = 0, startVal = 0, armed = false, scrubbing = false;
+  const stepFor = () => (spec.step != null ? spec.step : (spec.key === "weight" ? weightStep(config.displayUnit) : 1));
+  input.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const c = liveCtx(); if (!c) return;
+    armed = true; scrubbing = false;
+    startX = e.clientX; startY = e.clientY;
+    startVal = parseFloat(c.field(spec.key));
+    if (!Number.isFinite(startVal)) startVal = parseFloat(c.seedFor(spec.key)) || 0;
+  });
+  input.addEventListener("pointermove", (e) => {
+    if (!armed) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!scrubbing) {
+      // Wait for a clearly horizontal drag; until then leave focus/caret alone.
+      if (Math.abs(dx) < SCRUB_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+      scrubbing = true;
+      input.blur();
+      try { input.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    }
+    e.preventDefault();
+    const c = liveCtx(); if (!c) return;
+    const steps = Math.round(dx / SCRUB_STEP_PX);
+    const next = clampField(spec.key, startVal + steps * stepFor());
+    const nextStr = String(Math.round(next * 100) / 100);
+    c.setField(spec.key, nextStr);
+    input.value = nextStr;
+    syncActions(c);
+  });
+  const end = () => { armed = false; scrubbing = false; };
+  input.addEventListener("pointerup", end);
+  input.addEventListener("pointercancel", end);
+}
+
 // One labelled stepper column (label · [− input +] · unit) for a field spec
 // { key, label, unit?, step? }. The weight column also carries the plate icon.
 function makeField(spec) {
@@ -61,8 +102,9 @@ function makeField(spec) {
   const input = el("input", {
     type: "number", inputmode: "decimal", step: stepAttr, class: "sc-value",
     "aria-label": spec.label,
-    oninput: (e) => { const c = liveCtx(); if (c) { c.setField(spec.key, e.target.value); paintPanel(); } },
+    oninput: (e) => { const c = liveCtx(); if (c) { c.setField(spec.key, e.target.value); syncActions(c); paintPanel(); } },
   });
+  attachScrub(input, spec);
   const unit = el("span", { class: "sc-unit muted small" });
   const wrap = el("div", { class: "sc-field", "data-field": spec.key },
     el("span", { class: "sc-field-label" }, spec.label),
@@ -176,6 +218,25 @@ function toggleExpand() { expanded = !expanded; paint(); }
 function toggleDropdown() { dropdownOpen = !dropdownOpen; paintDropdown(); }
 
 // ── Painting ─────────────────────────────────────────────────────────────────
+// Action-row + progress state that depends on the active ctx's current draft
+// (canLog / set type / progress). Split out so field handlers can refresh it
+// live without a full paint() — which would rewrite the input the user is
+// typing into. Never touches the field inputs themselves.
+function syncActions(c) {
+  if (!barEl || !c) return;
+  const cardio = !!c.cardio;
+  const p = c.progress();
+  els.progressEl.textContent = c.isEditing()
+    ? c.activeLabel()
+    : cardio ? (c.activeLabel ? c.activeLabel() : "")
+    : (c.hasTarget ? `Set ${p.done + 1} / ${p.target}` : `Set ${p.done + 1}`);
+  const typeLabel = cardio ? null : c.typeLabel();
+  els.typeBtn.style.display = typeLabel ? "" : "none";
+  if (typeLabel) els.typeBtn.textContent = typeLabel;
+  els.logBtn.textContent = c.isEditing() ? (cardio ? "Update" : "Save") : (cardio ? "Log" : "Log set");
+  els.logBtn.disabled = !c.canLog();
+}
+
 function paint() {
   if (!barEl) return;
   const c = liveCtx();
@@ -197,11 +258,7 @@ function paint() {
   }
   const cardio = !!c.cardio;
   els.nameBtn.textContent = c.name + " ▾";
-  const p = c.progress();
-  els.progressEl.textContent = c.isEditing()
-    ? c.activeLabel()
-    : cardio ? (c.activeLabel ? c.activeLabel() : "")
-    : (c.hasTarget ? `Set ${p.done + 1} / ${p.target}` : `Set ${p.done + 1}`);
+  syncActions(c);
 
   syncFields(c);
   for (const k in els.fields) {
@@ -215,12 +272,7 @@ function paint() {
   // default field set). Cardio supplies its own fields, so this never hits it.
   if (els.fields.rir && !c.fields) els.fields.rir.wrap.style.display = mode === "custom" ? "none" : "";
 
-  const typeLabel = cardio ? null : c.typeLabel();
-  els.typeBtn.style.display = typeLabel ? "" : "none";
-  if (typeLabel) els.typeBtn.textContent = typeLabel;
   els.addBtn.style.display = cardio ? "none" : "";
-  els.logBtn.textContent = c.isEditing() ? (cardio ? "Update" : "Save") : (cardio ? "Log" : "Log set");
-  els.logBtn.disabled = !c.canLog();
 
   paintDropdown();
   paintPanel();
