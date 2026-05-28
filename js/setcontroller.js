@@ -61,7 +61,7 @@ function makeField(spec) {
   const input = el("input", {
     type: "number", inputmode: "decimal", step: stepAttr, class: "sc-value",
     "aria-label": spec.label,
-    oninput: (e) => { const c = liveCtx(); if (c) { c.setField(spec.key, e.target.value); paintPanel(); } },
+    oninput: (e) => { const c = liveCtx(); if (c) { c.setField(spec.key, e.target.value); els.logBtn.disabled = !c.canLog(); paintPanel(); } },
   });
   const unit = el("span", { class: "sc-unit muted small" });
   const wrap = el("div", { class: "sc-field", "data-field": spec.key },
