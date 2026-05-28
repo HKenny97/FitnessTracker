@@ -693,7 +693,10 @@ export function buildVolumeSuggestionCard(items, { mesoId, week, onChange } = {}
       onChange?.();
     });
     const fb = it.feedback || {};
+    const driftTag = it.rirDrift >= 2 ? " · RIR drift⚑⚑"
+      : it.rirDrift >= 1 ? " · RIR drift⚑" : "";
     const fbText = `pump ${fb.pump}/3 · sore ${fb.soreness}/3 · joint ${fb.jointPain}/3 · perf ${fb.performance}/3`
+      + driftTag
       + (it.prevTarget != null ? ` · ${it.performedSets}/${it.prevTarget} sets last week` : "");
     card.append(
       el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem" } },

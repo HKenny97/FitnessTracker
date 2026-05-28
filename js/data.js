@@ -10,7 +10,8 @@ import {
   suggestSetAdjustment,
   exerciseSecondary,
 } from "./rp.js";
-import { resolvePlanForWeek, DEFAULT_PHASE_TEMPLATE } from "./goals.js";
+import { resolvePlanForWeek, DEFAULT_PHASE_TEMPLATE, currentPhase, mondayOf } from "./goals.js";
+import { analyze } from "./adaptive.js";
 
 export const CUSTOM_MESO_ID = "_custom";
 
@@ -336,21 +337,53 @@ export async function saveWeekPlanAdjustment({ mesoId, week, muscleGroup, deltaS
   invalidate("weekPlanAdjustments");
 }
 
+// Aggregate per-muscle RIR drift signal (0..2) from analyze()'s fatigue check
+// across every working exercise that targets `muscleGroup`. Returns 1 when at
+// least one exercise has drifted, 2 when multiple have. Pure-ish: takes all
+// sets and the muscle group, calls into adaptive.analyze (which only reads
+// the sets we pass in). Used by getVolumeSuggestions to widen the autoreg
+// signal beyond per-session feedback.
+export function muscleRirDrift(allSets, muscleGroup) {
+  if (!muscleGroup || !allSets || !allSets.length) return 0;
+  const byEx = {};
+  for (const s of allSets) {
+    if (s.muscleGroup !== muscleGroup) continue;
+    if (s.setType === "warmup") continue;
+    (byEx[s.exercise] ||= []).push(s);
+  }
+  let drifted = 0;
+  for (const [ex, sets] of Object.entries(byEx)) {
+    if (sets.length < 4) continue;
+    const a = analyze(ex, sets);
+    if (a?.stats?.fatigue?.rirDrift) drifted++;
+  }
+  return drifted >= 2 ? 2 : drifted >= 1 ? 1 : 0;
+}
+
 // Per-muscle volume recommendations for `week`, derived from the prior week's
 // feedback, performed volume, and landmarks via suggestSetAdjustment. Excludes
 // "hold" outcomes and muscles already adjusted this week. Each item also carries
 // the feedback averages + performed/target sets so the UI can explain the call.
 // Shared by the workout view and the dashboard.
-export async function getVolumeSuggestions(mesoId, week) {
+//
+// When `weekStart` is supplied and a light-meso phase cycle is active, deload
+// weeks force every suggestion to "hold" so the phase wave isn't overridden by
+// feedback. RIR drift from analyze() is folded in per muscle as a secondary
+// fatigue signal — see muscleRirDrift.
+export async function getVolumeSuggestions(mesoId, week, { weekStart = "" } = {}) {
   if (+week < 2) return [];
   const prevWeek = +week - 1;
-  const [feedback, landmarks, effPlan, prevVol, adjustments] = await Promise.all([
+  const [feedback, landmarks, effPlan, prevVol, adjustments, allSets, phaseCycle] = await Promise.all([
     getSessionFeedback(mesoId),
     getLandmarks(),
     getEffectiveWeekPlan(mesoId),
     weeklyVolume(mesoId, prevWeek),
     getWeekPlanAdjustments(mesoId),
+    listSets(),
+    getPhaseCycle(),
   ]);
+  const phase = currentPhase(weekStart || mondayOf(isoToday()), phaseCycle);
+  const isDeload = phase?.phase === "deload";
   const acceptedThisWeek = new Set(adjustments.filter((a) => a.week === +week).map((a) => a.muscleGroup));
   const planThis = effPlan.filter((p) => p.week === +week);
   const items = [];
@@ -367,14 +400,17 @@ export async function getVolumeSuggestions(mesoId, week) {
     const prevTarget = effPlan.find((x) => x.week === prevWeek && x.muscleGroup === p.muscleGroup)?.targetSets ?? p.targetSets;
     const vol = prevVol[p.muscleGroup];
     const performedSets = vol ? vol.direct + vol.indirect : 0;
+    const rirDrift = muscleRirDrift(allSets, p.muscleGroup);
     const sug = suggestSetAdjustment({
       feedback: feedbackAvg,
       performedSets,
       targetSets: prevTarget,
       landmark: landmarks[p.muscleGroup] || {},
+      rirDrift,
+      isDeload,
     });
     if (sug.deltaSets === 0 && sug.action !== "deload") continue;
-    items.push({ muscleGroup: p.muscleGroup, ...sug, feedback: feedbackAvg, performedSets, prevTarget });
+    items.push({ muscleGroup: p.muscleGroup, ...sug, feedback: feedbackAvg, performedSets, prevTarget, rirDrift });
   }
   return items;
 }

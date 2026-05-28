@@ -5349,41 +5349,68 @@ export function distributeSets(totalSets, exerciseCount) {
 
 // Feedback-driven set-count adjustment for a muscle group's next session/week.
 // feedback fields pump/soreness/jointPain/performance are 0–3 (performance:
-// 0 worse … 3 better; defaults to "ok" when absent). Returns the recommended
-// change to apply on top of the planned target — see getEffectiveWeekPlan.
+// 0 worse … 3 better; defaults to "ok" when absent). `rirDrift` is a 0–2 score
+// from analyze()'s per-exercise RIR-drift detection aggregated to the muscle
+// (see data.muscleRirDrift) — treated as effective soreness, since effort
+// outrunning the plan is functionally a fatigue signal. `isDeload` forces a
+// hold so the recurring phase model's deload week isn't overridden by feedback.
+// Returns the recommended change to apply on top of the planned target — see
+// getEffectiveWeekPlan.
 //   { deltaSets, action: "add"|"hold"|"reduce"|"deload", reason }
-export function suggestSetAdjustment({ feedback = {}, performedSets = 0, targetSets = 0, landmark = {} } = {}) {
+export function suggestSetAdjustment({ feedback = {}, performedSets = 0, targetSets = 0, landmark = {}, rirDrift = 0, isDeload = false } = {}) {
   const pump = +feedback.pump || 0;
-  const soreness = +feedback.soreness || 0;
+  const sorenessRaw = +feedback.soreness || 0;
   const jointPain = +feedback.jointPain || 0;
   const performance = feedback.performance == null ? 2 : +feedback.performance;
+  const drift = Math.max(0, +rirDrift || 0);
+  const soreness = Math.min(3, sorenessRaw + drift);
   const MRV = Number.isFinite(+landmark.MRV) ? +landmark.MRV : Infinity;
   const MEV = +landmark.MEV || 0;
 
   if (performedSets < targetSets / 2) {
     return { deltaSets: 0, action: "hold", reason: "Not enough sets logged to judge — holding." };
   }
+  if (isDeload) {
+    return { deltaSets: 0, action: "hold", reason: "Deload week — holding volume." };
+  }
   if (jointPain >= 2) {
     return { deltaSets: -1, action: "reduce", reason: "Joint pain reported — backing off a set." };
   }
+  // Productive overreach: a big pump with on-target performance even at high
+  // soreness usually means the volume is doing its job — hold instead of cut.
+  if (pump >= 3 && performance >= 2 && soreness >= 2) {
+    return { deltaSets: 0, action: "hold", reason: "Strong pump + on-target performance — productive overreach, holding." };
+  }
   if (soreness >= 3) {
-    return { deltaSets: -1, action: "reduce", reason: "High soreness — reducing a set." };
+    const reason = drift >= 1
+      ? "RIR drifting and high fatigue — reducing a set."
+      : "High soreness — reducing a set.";
+    return { deltaSets: -1, action: "reduce", reason };
   }
   if (targetSets >= MRV) {
     const deloadTarget = Math.max(2, Math.round(MEV * 0.5));
     return { deltaSets: Math.min(0, deloadTarget - targetSets), action: "deload", reason: "At MRV — time to deload." };
   }
+  // Junk volume: a low pump despite real soreness means the stimulus isn't
+  // earning the fatigue — cut a set instead of holding.
+  if (pump <= 1 && sorenessRaw >= 2) {
+    return { deltaSets: -1, action: "reduce", reason: "Low pump but still sore — junk volume, reducing a set." };
+  }
   if (soreness >= 2) {
-    return { deltaSets: 0, action: "hold", reason: "Still sore — holding volume." };
+    return { deltaSets: 0, action: "hold", reason: drift >= 1 ? "Effort drifting — holding." : "Still sore — holding volume." };
   }
   if (soreness <= 1 && performance >= 2) {
     const room = MRV - targetSets;
-    let delta = Math.min(pump <= 1 ? 2 : 1, room);
+    // Pump 0 = no stimulus at all → +3; pump 1 = light stimulus → +2; pump ≥ 2 = good stimulus → +1.
+    const want = pump === 0 ? 3 : pump === 1 ? 2 : 1;
+    let delta = Math.min(want, room);
     if (delta <= 0) return { deltaSets: 0, action: "hold", reason: "Approaching MRV — holding." };
     return {
       deltaSets: delta,
       action: "add",
-      reason: pump <= 1 ? "Low pump (low stimulus) — adding volume." : "Recovered with good stimulus — adding a set.",
+      reason: pump === 0 ? "No pump (very low stimulus) — adding volume aggressively."
+        : pump === 1 ? "Low pump (low stimulus) — adding volume."
+        : "Recovered with good stimulus — adding a set.",
     };
   }
   return { deltaSets: 0, action: "hold", reason: "On track — holding." };
