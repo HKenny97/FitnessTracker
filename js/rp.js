@@ -332,6 +332,9 @@ export const EXERCISE_LIBRARY = [
   { name: "HS Preacher Curl", group: "Biceps", equipment: "hammer strength", secondary: [{ group: "Forearms", fraction: 0.25 }] },
   { name: "HS Bicep Curl", group: "Biceps", equipment: "hammer strength", secondary: [{ group: "Forearms", fraction: 0.25 }] },
   { name: "HS Iso-Lateral Preacher Curl", group: "Biceps", equipment: "hammer strength", secondary: [{ group: "Forearms", fraction: 0.25 }] },
+  { name: "Reverse Barbell Curl", group: "Biceps", equipment: "barbell", secondary: [{ group: "Forearms", fraction: 0.5 }] },
+  { name: "Reverse Cable Curl", group: "Biceps", equipment: "cable", secondary: [{ group: "Forearms", fraction: 0.5 }] },
+  { name: "Zottman Curl", group: "Biceps", equipment: "dumbbell", secondary: [{ group: "Forearms", fraction: 0.5 }] },
 
   // ── Triceps ────────────────────────────────────────────────
   { name: "Triceps Pushdown", group: "Triceps", equipment: "cable" },
@@ -375,13 +378,9 @@ export const EXERCISE_LIBRARY = [
   { name: "Wrist Curl", group: "Forearms", equipment: "barbell" },
   { name: "Dumbbell Wrist Curl", group: "Forearms", equipment: "dumbbell" },
   { name: "Reverse Wrist Curl", group: "Forearms", equipment: "barbell" },
-  { name: "Reverse Barbell Curl", group: "Forearms", equipment: "barbell" },
-  { name: "Reverse Cable Curl", group: "Forearms", equipment: "cable" },
   { name: "Behind-the-Back Wrist Curl", group: "Forearms", equipment: "barbell" },
-  { name: "Farmer's Walk", group: "Forearms", equipment: "dumbbell", secondary: [{ group: "Traps", fraction: 0.25 }] },
   { name: "Dead Hang", group: "Forearms", equipment: "bodyweight" },
   { name: "Plate Pinch Hold", group: "Forearms", equipment: "barbell" },
-  { name: "Zottman Curl", group: "Forearms", equipment: "dumbbell", secondary: [{ group: "Biceps", fraction: 0.5 }] },
   { name: "Cable Wrist Curl", group: "Forearms", equipment: "cable" },
   { name: "Cable Reverse Wrist Curl", group: "Forearms", equipment: "cable" },
 
@@ -399,6 +398,7 @@ export const EXERCISE_LIBRARY = [
   { name: "Single-Arm Cable Shrug", group: "Traps", equipment: "cable" },
   { name: "Behind-the-Back Cable Shrug", group: "Traps", equipment: "cable" },
   { name: "HS Shrug", group: "Traps", equipment: "hammer strength" },
+  { name: "Farmer's Walk", group: "Traps", equipment: "dumbbell", secondary: [{ group: "Forearms", fraction: 0.5 }, { group: "Abs", fraction: 0.25 }] },
 
   // ── Abs ────────────────────────────────────────────────────
   { name: "Cable Crunch", group: "Abs", equipment: "cable" },
