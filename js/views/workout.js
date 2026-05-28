@@ -82,7 +82,7 @@ function perfPill(perf, detailed = false) {
 // (display unit) auto-loads the nearest achievable load at/below it. For Hammer
 // Strength a "per side" toggle switches the math between a single iso-lateral
 // arm (×1) and a symmetric/altogether load (×2). Reuses the picker CSS.
-function openPlateModal(initialDisplay, { equipment = "", exercise = "" } = {}) {
+function openPlateModal(initialDisplay, { equipment = "", exercise = "", onApply = null } = {}) {
   const unit = config.displayUnit;
   const isHS = (equipment || "").toLowerCase() === "hammer strength";
   // Barbell/Smith ride on a standard bar; plate-loaded machines start empty.
@@ -110,6 +110,15 @@ function openPlateModal(initialDisplay, { equipment = "", exercise = "" } = {}) 
     }
   }
   seed();
+
+  // The weight the user would log, recomputed live (render() is re-entrant, so
+  // we can't close over its locals). HS plates are entered per-arm (divisor 1),
+  // and that value IS the field value — per-side for HS-per-side, total for
+  // HS-both. Every other bar splits across two sleeves (divisor 2).
+  function applyValue() {
+    const v = isHS ? totalFromCounts(counts, base, 1) : totalFromCounts(counts, base, 2);
+    return Math.round(v * 100) / 100;
+  }
 
   const countEls = {};
   const viz = el("div", { class: "plate-bar" });
@@ -219,6 +228,9 @@ function openPlateModal(initialDisplay, { equipment = "", exercise = "" } = {}) 
       )
     : null;
 
+  const applyBtn = el("button", { class: "btn primary" }, "Use this weight");
+  applyBtn.onclick = () => { if (onApply) onApply(applyValue()); close(); };
+
   overlay.append(
     el("div", { class: "picker-sheet" },
       el("div", { class: "picker-head" },
@@ -232,6 +244,7 @@ function openPlateModal(initialDisplay, { equipment = "", exercise = "" } = {}) 
       vizLabel,
       viz,
       summary,
+      onApply ? el("div", { class: "row", style: { justifyContent: "flex-end", marginTop: "0.75rem" } }, applyBtn) : null,
     ),
   );
   document.body.append(overlay);
@@ -1129,11 +1142,14 @@ async function renderExercise(meso, week, day, ex, setTarget, targetRIR, equipme
     addSet: () => { addDraft(); editingSetId = null; editTemp = null; activeDraftIndex = drafts.length - 1; renderSets(); },
     buildPanel: buildExercisePanel,
     usesPlates: usesPlates(equipment),
-    openPlates: () => openPlateModal(ctx.field("weight") || suggestedDisplay, { equipment, exercise: ex.exercise }),
+    openPlates: () => openPlateModal(ctx.field("weight") || suggestedDisplay, { equipment, exercise: ex.exercise, onApply: (w) => { ctx.setField("weight", String(w)); refreshSetController(); } }),
     onDeactivate: () => { if (editingSetId) { editingSetId = null; editTemp = null; renderSets(); } },
   };
 
-  if (!logged.length && setTarget > 0) addDraft();
+  // Always seed an initial draft when nothing's logged — including ad-hoc
+  // exercises (setTarget === 0) added on the fly — so the controller's active
+  // set is never null and can be edited/logged without first tapping "Next".
+  if (!logged.length) addDraft();
   else renderSets();
 
   return { block, ctx };
@@ -1929,7 +1945,7 @@ async function renderCustomMode(root, onFinish) {
       addSet: addBlank,
       buildPanel: buildCustomPanel,
       usesPlates: usesPlates(equipment),
-      openPlates: () => openPlateModal(ctx.field("weight") || (lastSavedWeightLbs() ? toDisplay(lastSavedWeightLbs()) : ""), { equipment, exercise: ex.exercise }),
+      openPlates: () => openPlateModal(ctx.field("weight") || (lastSavedWeightLbs() ? toDisplay(lastSavedWeightLbs()) : ""), { equipment, exercise: ex.exercise, onApply: (w) => { ctx.setField("weight", String(w)); refreshSetController(); } }),
       onDeactivate: () => { if (editingSetId) { editingSetId = null; editTemp = null; renderSets(); } },
     };
 

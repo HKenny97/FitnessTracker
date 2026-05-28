@@ -640,6 +640,8 @@ input[type="number"] {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   color: var(--text);
+  /* Vertical page scroll passes through; horizontal drag is the value scrub. */
+  touch-action: pan-y;
 }
 .sc-unit { min-height: 1em; }
 /* Plate-calculator shortcut under the Weight value */
