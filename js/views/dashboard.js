@@ -125,13 +125,14 @@ export async function render(container, { signedIn }) {
   data.clearCaches();
 
   // --- Load all data upfront (shared by every tab) ---
-  const [mesos, allSets, allSessions, cardioEntries, eqMap, landmarks] = await Promise.all([
+  const [mesos, allSets, allSessions, cardioEntries, eqMap, landmarks, allFeedback] = await Promise.all([
     data.listMesocycles(),
     data.listSets(),
     data.listSessions(),
     data.listCardio(),
     data.getEquipmentMap(),
     data.getLandmarks(),
+    data.getAllSessionFeedback(),
   ]);
   const activeMeso = mesos.find((m) => m.status === "active") || null;
   const today = isoToday();
@@ -788,38 +789,121 @@ export async function render(container, { signedIn }) {
       grid.append(card);
     }
 
-    // Recovery trend from session feedback.
-    if (activeMeso && feedback.length) {
-      const card = el("section", { class: "card span2" }, secHead("🛌", "Recovery", "soreness / joints, by muscle"));
-      const fbWeeks = [...new Set(feedback.map((f) => f.week))].sort((a, b) => a - b);
-      const lastW = fbWeeks[fbWeeks.length - 1], prevW = fbWeeks[fbWeeks.length - 2];
-      const muscles = [...new Set(feedback.map((f) => f.muscleGroup))];
-      const avgFor = (mg, w, key) => {
-        const rows = feedback.filter((f) => f.muscleGroup === mg && f.week === w);
-        if (!rows.length) return null;
-        return rows.reduce((s, f) => s + (f[key] || 0), 0) / rows.length;
+    // ── Recovery cockpit: per-muscle feedback trend grid ──
+    // 4-week sparklines per signal (pump / soreness / joint pain / performance)
+    // with an anomaly chip when any signal rises monotonically for ≥ 3 weeks.
+    if (allFeedback.length) {
+      const cockpit = el("section", { class: "card span2" },
+        secHead("🛌", "Recovery cockpit", "feedback trends · last 4 weeks"));
+      const fbWeeks = lastNWeeks(4);
+      const muscles = [...new Set(allFeedback.map((f) => f.muscleGroup))].filter(Boolean);
+      // Bucket by (muscle, weekIdx).
+      const byMW = {};
+      for (const f of allFeedback) {
+        const wi = fbWeeks.findIndex((w) => f.date >= w.start && f.date <= w.end);
+        if (wi < 0) continue;
+        ((byMW[f.muscleGroup] ||= {})[wi] ||= []).push(f);
+      }
+      const avg = (rows, key) => {
+        const vals = rows.map((r) => r[key]).filter((v) => v != null);
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
       };
-      let flagged = 0;
+      // Render only muscles with at least 2 weeks of data — sparkline needs it.
+      const rendered = [];
       for (const mg of muscles) {
-        const sore = avgFor(mg, lastW, "soreness");
-        const joint = avgFor(mg, lastW, "jointPain");
-        if (sore == null) continue;
-        const prevSore = prevW != null ? avgFor(mg, prevW, "soreness") : null;
-        const rising = prevSore != null && sore - prevSore >= 0.5;
-        const concern = sore >= 2 || (joint != null && joint >= 1) || rising;
-        if (concern) flagged++;
-        card.append(
-          el("div", { class: "row", style: { justifyContent: "space-between", padding: "0.2rem 0" } },
-            el("span", {}, formatMuscle(mg)),
-            el("span", { class: "muted small" },
-              `soreness ${sore.toFixed(1)}/3${rising ? " ↑" : ""}${joint != null && joint >= 1 ? ` · joints ${joint.toFixed(1)}` : ""}`,
-              concern ? el("span", { class: "zone-pill", style: { background: "var(--warn)", marginLeft: "0.4rem" } }, "watch") : null,
+        const weeksHit = byMW[mg] || {};
+        const hitCount = Object.keys(weeksHit).length;
+        if (hitCount < 2) continue;
+        rendered.push(mg);
+        const seriesFor = (key) => fbWeeks.map((_, wi) => {
+          const rows = weeksHit[wi] || [];
+          const v = avg(rows, key);
+          return { x: wi, y: v == null ? null : v };
+        });
+        const sparkRow = el("div", { class: "row", style: { gap: "0.5rem", alignItems: "center", marginTop: "0.4rem" } });
+        const COLS = [
+          { key: "pump", label: "pump", color: "#36c4b7" },
+          { key: "soreness", label: "sore", color: "#ffb547" },
+          { key: "jointPain", label: "joint", color: "#ff5a1f" },
+          { key: "performance", label: "perf", color: "#39b54a" },
+        ];
+        const chips = [];
+        for (const c of COLS) {
+          const series = seriesFor(c.key).filter((p) => p.y != null);
+          const cvs = el("canvas", { style: { width: "60px", height: "20px" } });
+          sparkRow.append(
+            el("div", { class: "row", style: { gap: "0.25rem", alignItems: "center" } },
+              el("span", { class: "muted small", style: { width: "32px" } }, c.label),
+              cvs,
             ),
+          );
+          requestAnimationFrame(() => sparkline(cvs, series, c.color));
+          // Monotonic-rising anomaly across the last 3 available points.
+          const tail = series.slice(-3);
+          if (tail.length === 3 && tail[0].y < tail[1].y && tail[1].y < tail[2].y && tail[2].y - tail[0].y >= 0.8) {
+            chips.push(`${c.label} ↑ 3 wks`);
+          }
+        }
+        cockpit.append(
+          el("div", { style: { padding: "0.3rem 0", borderTop: "1px solid var(--panel-2)" } },
+            el("div", { class: "row", style: { justifyContent: "space-between", alignItems: "center" } },
+              el("strong", {}, formatMuscle(mg)),
+              chips.length ? el("span", { class: "zone-pill", style: { background: "var(--warn)" } }, chips.join(" · ")) : null,
+            ),
+            sparkRow,
           ),
         );
       }
-      if (!flagged) card.append(el("p", { class: "muted small" }, "Recovery looks good — no muscles flagging high soreness or joint pain."));
-      grid.append(card);
+      if (!rendered.length) {
+        cockpit.append(el("p", { class: "muted small" }, "Log a few sessions with feedback to see recovery trends."));
+      } else {
+        cockpit.append(el("p", { class: "muted small", style: { marginTop: "0.5rem" } },
+          "Pump · sore · joint · perf, each 0–3. Rising soreness or joints over 3 wks suggests fatigue is outpacing recovery."));
+      }
+      grid.append(cockpit);
+    }
+
+    // ── Cross-exercise fatigue board ──
+    // analyze()'s fatigue flags only render one exercise at a time on Insights;
+    // this surfaces every flagged exercise from the last 8 weeks in one place.
+    {
+      const cutoff = lastNWeeks(8)[0].start;
+      const recentEx = {};
+      for (const s of workingSets) {
+        if (s.date < cutoff) continue;
+        (recentEx[s.exercise] ||= []).push(s);
+      }
+      const flagged = [];
+      for (const [ex, sets] of Object.entries(recentEx)) {
+        if (sets.length < 4) continue;
+        const histAll = historyFor(ex);
+        const a = analyze(ex, histAll);
+        const f = a?.stats?.fatigue || {};
+        if (a.fatigueWarning || f.stalling || f.regressing || f.rirDrift) {
+          const severity = (f.regressing ? 3 : 0) + (f.stalling ? 2 : 0) + (f.rirDrift ? 1 : 0);
+          flagged.push({ exercise: ex, warning: a.fatigueWarning, severity, muscleGroup: sets[0].muscleGroup });
+        }
+      }
+      if (flagged.length) {
+        flagged.sort((a, b) => b.severity - a.severity);
+        const card = el("section", { class: "card span2" },
+          secHead("⚠️", "Fatigue board", `${flagged.length} flagged lift${flagged.length === 1 ? "" : "s"}`));
+        for (const f of flagged.slice(0, 12)) {
+          card.append(
+            el("a", { class: "row", href: `#/insights/${encodeURIComponent(f.exercise)}`,
+              style: { justifyContent: "space-between", padding: "0.3rem 0", borderTop: "1px solid var(--panel-2)", textDecoration: "none", color: "inherit" } },
+              el("div", {},
+                el("strong", {}, f.exercise),
+                el("div", { class: "muted small" }, f.warning || "Stall / regression detected"),
+              ),
+              el("span", { class: "pill" }, formatMuscle(f.muscleGroup || "")),
+            ),
+          );
+        }
+        card.append(el("p", { class: "muted small", style: { marginTop: "0.5rem" } },
+          "Pulled from analyze()'s per-exercise fatigue check — stall, regression, or RIR drift across recent sessions."));
+        grid.append(card);
+      }
     }
 
     body.append(grid);

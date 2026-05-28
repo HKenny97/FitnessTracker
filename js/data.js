@@ -318,6 +318,25 @@ export async function getSessionFeedback(mesoId) {
     }));
 }
 
+// Every feedback row across every meso, normalized. Used by dashboard cards
+// that span the user's full history (e.g. the Recovery cockpit).
+export async function getAllSessionFeedback() {
+  const rows = await cached("sessionFeedback", () => sheets.readAll("sessionFeedback"));
+  return rows
+    .map((r) => ({
+      mesoId: r.mesoId,
+      week: +r.week,
+      dayIndex: +r.dayIndex,
+      date: r.date,
+      muscleGroup: r.muscleGroup,
+      pump: +r.pump || 0,
+      soreness: +r.soreness || 0,
+      jointPain: +r.jointPain || 0,
+      performance: r.performance === "" ? null : +r.performance,
+    }))
+    .filter((r) => r.muscleGroup && r.date);
+}
+
 const adjustmentId = (mesoId, week, muscleGroup) => `${mesoId}|${week}|${muscleGroup}`;
 
 export async function getWeekPlanAdjustments(mesoId) {
