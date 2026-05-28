@@ -7,6 +7,8 @@ import * as goals from "./views/goals.js";
 import * as profile from "./views/profile.js";
 import * as workout from "./views/workout.js";
 import * as history from "./views/history.js";
+import * as exercises from "./views/exercises.js";
+import * as exerciseDetail from "./views/exercise-detail.js";
 import * as settings from "./views/settings.js";
 import * as insights from "./views/insights.js";
 import * as sheets from "./sheets.js";
@@ -24,6 +26,7 @@ function setActiveTab() {
     hash.startsWith("#/meso") || hash.startsWith("#/plan") ? "meso" :
     hash.startsWith("#/workout") ? "workout" :
     hash.startsWith("#/history") ? "history" :
+    hash.startsWith("#/exercises") ? "exercises" :
     hash.startsWith("#/settings") || hash.startsWith("#/profile") ? "settings" : "dashboard";
   for (const a of document.querySelectorAll(".tabs a")) {
     a.classList.toggle("active", a.dataset.route === tab);
@@ -112,6 +115,8 @@ route("/meso/new", wrap(async (root) => meso.renderNew(root)));
 route("/meso/:id", wrap(async (root, p) => meso.renderDetail(root, p.id)));
 route("/workout", wrap(async (root) => workout.render(root)));
 route("/history", wrap(async (root) => history.render(root)));
+route("/exercises", wrap(async (root) => exercises.render(root)));
+route("/exercises/:name", wrap(async (root, p) => exerciseDetail.render(root, p.name)));
 route("/settings", wrap(async (root) => settings.render(root)));
 route("/profile", wrap(async (root) => profile.render(root)));
 route("/link/:id", wrap(async (root, p) => settings.renderLink(root, p.id)));
